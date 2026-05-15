@@ -153,8 +153,8 @@ export function PersonalMap() {
           <p className="eyebrow">Phase 0.6</p>
           <h1>Your saved Hyderabad, finally visible.</h1>
           <p className="lede">
-            A lightweight personal map for the places you saved from creator recommendations. Pins
-            are generated from Phase 0 seed coordinates until Mapbox is wired.
+            A lightweight personal map for the places you saved from creator recommendations, shown
+            on a real Hyderabad map with verified restaurant pins.
           </p>
         </div>
         <div className="hero-media-stack">
@@ -263,6 +263,14 @@ export function PersonalMap() {
 
         <section className="map-canvas-panel" aria-label="Saved places map">
           <div className="map-canvas">
+            <iframe
+              aria-label="OpenStreetMap map of Hyderabad"
+              className="real-map-frame"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src="https://www.openstreetmap.org/export/embed.html?bbox=78.38%2C17.34%2C78.51%2C17.45&layer=mapnik&marker=17.405%2C78.455"
+              title="Hyderabad map"
+            />
             <div className="map-grid-lines" />
             <span className="map-zone zone-west">Tolichowki</span>
             <span className="map-zone zone-central">Central</span>
