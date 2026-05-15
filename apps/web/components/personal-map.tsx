@@ -19,7 +19,7 @@ type EnrichedSave = SavedPlaceRecord & {
 };
 
 const hyderabadStaticMapUrl =
-  "https://staticmap.openstreetmap.de/staticmap.php?center=17.405,78.455&zoom=12&size=1100x820&maptype=mapnik";
+  "/images/hyderabad-static-map.svg";
 
 const mapBounds = {
   minLat: 17.34,
