@@ -18,6 +18,9 @@ type EnrichedSave = SavedPlaceRecord & {
   place: NonNullable<ReturnType<typeof getSeedPlaceById>>;
 };
 
+const hyderabadStaticMapUrl =
+  "https://staticmap.openstreetmap.de/staticmap.php?center=17.405,78.455&zoom=12&size=1100x820&maptype=mapnik";
+
 const mapBounds = {
   minLat: 17.34,
   maxLat: 17.45,
@@ -39,6 +42,11 @@ function getPinPosition(latitude: number, longitude: number) {
 
 function uniqueValues<T extends string>(values: T[]) {
   return Array.from(new Set(values));
+}
+
+function getGoogleMapsUrl(place: EnrichedSave["place"]) {
+  const query = encodeURIComponent(`${place.latitude},${place.longitude}`);
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
 export function PersonalMap() {
@@ -153,8 +161,9 @@ export function PersonalMap() {
           <p className="eyebrow">Phase 0.6</p>
           <h1>Your saved Hyderabad, finally visible.</h1>
           <p className="lede">
-            A lightweight personal map for the places you saved from creator recommendations, shown
-            on a real Hyderabad map with verified restaurant pins.
+            A lightweight personal map image for the places you saved from creator
+            recommendations. Once Rasa identifies the restaurant, the pin appears here and opens
+            Google Maps.
           </p>
         </div>
         <div className="hero-media-stack">
@@ -263,13 +272,11 @@ export function PersonalMap() {
 
         <section className="map-canvas-panel" aria-label="Saved places map">
           <div className="map-canvas">
-            <iframe
-              aria-label="OpenStreetMap map of Hyderabad"
-              className="real-map-frame"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              src="https://www.openstreetmap.org/export/embed.html?bbox=78.38%2C17.34%2C78.51%2C17.45&layer=mapnik&marker=17.405%2C78.455"
-              title="Hyderabad map"
+            <div
+              aria-label="Static Hyderabad map"
+              className="static-hyd-map"
+              role="img"
+              style={{ backgroundImage: `url(${hyderabadStaticMapUrl})` }}
             />
             <div className="map-grid-lines" />
             <span className="map-zone zone-west">Tolichowki</span>
@@ -277,22 +284,33 @@ export function PersonalMap() {
             <span className="map-zone zone-east">Banjara/Jubilee</span>
 
             {hyderabadSeedPlaces.map((place) => {
-              const hasVisibleSave = filteredSaves.some((save) => save.placeId === place.id);
               const position = getPinPosition(place.latitude, place.longitude);
 
-              return (
+              const matchingSave = filteredSaves.find((save) => save.placeId === place.id);
+
+              return matchingSave ? (
+                <a
+                  aria-label={`Open ${place.name} in Google Maps`}
+                  className="map-pin saved-pin"
+                  href={getGoogleMapsUrl(place)}
+                  key={place.id}
+                  rel="noreferrer"
+                  style={position}
+                  target="_blank"
+                  onClick={() => setSelectedSaveId(matchingSave.id)}
+                >
+                  <span>S</span>
+                </a>
+              ) : (
                 <button
                   aria-label={place.name}
-                  className={hasVisibleSave ? "map-pin saved-pin" : "map-pin seed-pin"}
+                  className="map-pin seed-pin"
                   key={place.id}
                   style={position}
                   type="button"
-                  onClick={() => {
-                    const matchingSave = filteredSaves.find((save) => save.placeId === place.id);
-                    setSelectedSaveId(matchingSave?.id ?? null);
-                  }}
+                  onClick={() => setSelectedSaveId(null)}
                 >
-                  <span>{hasVisibleSave ? "S" : ""}</span>
+                  <span />
                 </button>
               );
             })}
@@ -355,6 +373,14 @@ export function PersonalMap() {
                   <span key={cuisine}>{cuisine}</span>
                 ))}
               </div>
+              <a
+                className="maps-link"
+                href={getGoogleMapsUrl(selectedSave.place)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open in Google Maps
+              </a>
               <div className="summary-list">
                 <div>
                   <span>Creator</span>
@@ -442,8 +468,8 @@ export function PersonalMap() {
             <p className="eyebrow">Personal list</p>
             <h2>Everything you saved</h2>
             <p className="hint">
-              Use this before hangouts. Map pins are ready; Reel links marked auto resolving are
-              still being identified.
+              Use this before hangouts. Mapped pins open Google Maps; Reel links marked auto
+              resolving are still being identified.
             </p>
           </div>
           <p className="hint">{saves.length} saved</p>
@@ -492,6 +518,16 @@ export function PersonalMap() {
                   <p className="hint">
                     Resolved {new Date(save.resolvedAt).toLocaleString("en-IN")}
                   </p>
+                )}
+                {!isPending && (
+                  <a
+                    className="maps-link compact"
+                    href={getGoogleMapsUrl(place)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open in Google Maps
+                  </a>
                 )}
                 <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
               </article>

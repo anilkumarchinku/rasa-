@@ -988,7 +988,7 @@ button:not([data-slot]):hover {
 
 .map-canvas {
   aspect-ratio: 1.2;
-  background: #e8e1d6;
+  background: #e8dfd0;
   border: 1px solid var(--rasa-line);
   border-radius: 8px;
   min-height: 420px;
@@ -996,20 +996,23 @@ button:not([data-slot]):hover {
   position: relative;
 }
 
-.real-map-frame {
-  border: 0;
-  filter: saturate(0.82) contrast(0.98);
+.static-hyd-map {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: saturate(0.88) contrast(0.96) sepia(0.08);
   height: 100%;
   inset: 0;
   position: absolute;
+  user-select: none;
   width: 100%;
   z-index: 0;
 }
 
 .map-grid-lines {
   background:
-    linear-gradient(rgba(247, 244, 238, 0.12), rgba(247, 244, 238, 0.06)),
-    radial-gradient(circle at 50% 50%, transparent 35%, rgba(25, 22, 18, 0.08));
+    linear-gradient(rgba(247, 244, 238, 0.06), rgba(247, 244, 238, 0.02)),
+    radial-gradient(circle at 50% 50%, transparent 44%, rgba(25, 22, 18, 0.08));
   inset: 0;
   pointer-events: none;
   position: absolute;
@@ -1048,6 +1051,7 @@ button:not([data-slot]):hover {
   border: 2px solid #ffffff;
   border-radius: 999px 999px 999px 2px;
   box-shadow: 0 10px 22px rgba(25, 22, 18, 0.22);
+  color: #ffffff;
   display: flex;
   height: 28px;
   justify-content: center;
@@ -1057,6 +1061,10 @@ button:not([data-slot]):hover {
   transform: rotate(-45deg);
   width: 28px;
   z-index: 2;
+}
+
+a.map-pin {
+  text-decoration: none;
 }
 
 .map-pin span {
@@ -1190,6 +1198,27 @@ button:not([data-slot]):hover {
 .text-link {
   color: var(--rasa-tomato);
   font-weight: 900;
+}
+
+.maps-link {
+  align-items: center;
+  background: var(--rasa-ink);
+  border-radius: 8px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 900;
+  justify-content: center;
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.maps-link:hover {
+  background: #2a241d;
+}
+
+.maps-link.compact {
+  padding: 10px 12px;
 }
 
 .save-layout {
