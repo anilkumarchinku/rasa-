@@ -1067,9 +1067,57 @@ button:not([data-slot]):hover {
   width: 16px;
 }
 
+.pending-pin {
+  animation: pendingPulse 1.7s ease-in-out infinite;
+  background: var(--rasa-gold);
+  height: 34px;
+  width: 34px;
+  z-index: 3;
+}
+
+.pending-pin span {
+  font-size: 13px;
+}
+
 .map-pin:hover {
   box-shadow: 0 12px 24px rgba(216, 74, 51, 0.24);
   transform: rotate(-45deg) scale(1.08);
+}
+
+.pending-map-note {
+  background: rgba(25, 22, 18, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  bottom: 14px;
+  color: #ffffff;
+  display: grid;
+  gap: 4px;
+  left: 14px;
+  max-width: min(360px, calc(100% - 28px));
+  padding: 12px;
+  position: absolute;
+  z-index: 4;
+}
+
+.pending-map-note strong {
+  font-size: 14px;
+}
+
+.pending-map-note span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@keyframes pendingPulse {
+  0%,
+  100% {
+    box-shadow: 0 10px 22px rgba(173, 116, 31, 0.28);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(173, 116, 31, 0.12);
+  }
 }
 
 .map-legend {
@@ -1096,6 +1144,10 @@ button:not([data-slot]):hover {
 
 .legend-dot.saved {
   background: var(--rasa-tomato);
+}
+
+.legend-dot.pending {
+  background: var(--rasa-gold);
 }
 
 .legend-dot.seed {
@@ -1298,6 +1350,44 @@ button:not([data-slot]):hover {
 
 .resolver-card {
   border-color: rgba(173, 116, 31, 0.28);
+}
+
+.visible-pending-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.visible-pending-item {
+  background: rgba(173, 116, 31, 0.09);
+  border: 1px solid rgba(173, 116, 31, 0.22);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.visible-pending-item span {
+  color: var(--rasa-gold);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.visible-pending-item strong,
+.visible-pending-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.visible-pending-item strong {
+  color: var(--rasa-ink);
+}
+
+.visible-pending-item small {
+  color: var(--rasa-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .place-card h2 {

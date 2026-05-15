@@ -37,6 +37,19 @@ function getPinPosition(latitude: number, longitude: number) {
   };
 }
 
+function getPendingPinPosition(index: number) {
+  const positions = [
+    { left: "18%", top: "18%" },
+    { left: "28%", top: "22%" },
+    { left: "38%", top: "18%" },
+    { left: "18%", top: "32%" },
+    { left: "30%", top: "36%" },
+    { left: "42%", top: "31%" },
+  ];
+
+  return positions[index % positions.length];
+}
+
 function uniqueValues<T extends string>(values: T[]) {
   return Array.from(new Set(values));
 }
@@ -288,10 +301,33 @@ export function PersonalMap() {
                 </button>
               );
             })}
+
+            {pendingSaves.map((save, index) => (
+              <button
+                aria-label={`${save.placeName} waiting for restaurant detection`}
+                className="map-pin pending-pin"
+                key={save.id}
+                style={getPendingPinPosition(index)}
+                type="button"
+                onClick={() => setSelectedSaveId(null)}
+              >
+                <span>?</span>
+              </button>
+            ))}
+
+            {pendingSaves.length > 0 && (
+              <div className="pending-map-note">
+                <strong>{pendingSaves.length} saved Reel links</strong>
+                <span>Visible now. Pins move after restaurant detection.</span>
+              </div>
+            )}
           </div>
           <div className="map-legend">
             <span>
               <i className="legend-dot saved" /> Saved
+            </span>
+            <span>
+              <i className="legend-dot pending" /> Saved link, resolving
             </span>
             <span>
               <i className="legend-dot seed" /> Seed place
@@ -348,6 +384,17 @@ export function PersonalMap() {
               <Link className="text-link" href="/save">
                 Save a place
               </Link>
+              {pendingSaves.length > 0 && (
+                <div className="visible-pending-list">
+                  {pendingSaves.slice(0, 3).map((save) => (
+                    <div className="visible-pending-item" key={save.id}>
+                      <span>Saved link</span>
+                      <strong>{save.placeName}</strong>
+                      <small>{save.sourceUrl ?? save.rawInput}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </aside>
