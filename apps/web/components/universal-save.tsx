@@ -384,14 +384,16 @@ export function UniversalSave() {
               </div>
               <div className="place-meta">
                 <span>
-                  {save.resolutionStatus === "pending"
+                  {save.resolutionStatus === "pending" || save.resolutionStatus === "review"
                     ? "Auto resolving"
                     : `${Math.round(save.confidence * 100)}% match`}
                 </span>
                 <span>
                   {save.resolutionStatus === "pending"
                     ? "Needs restaurant detection"
-                    : "Matched restaurant"}
+                    : save.resolutionStatus === "review"
+                      ? "Needs place verification"
+                      : "Matched restaurant"}
                 </span>
               </div>
               {save.resolverNote && <p className="hint">{save.resolverNote}</p>}

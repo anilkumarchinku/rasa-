@@ -761,8 +761,20 @@ export type InstagramResolverResult = {
   creatorHandle?: string;
   note: string;
   place?: PhaseZeroPlace;
-  source: "direct-text" | "demo-fixture" | "meta-oembed" | "unresolved";
+  source: "direct-text" | "demo-fixture" | "meta-oembed" | "ai-extraction" | "unresolved";
   thumbnailUrl?: string;
+  extractedPlaceName?: string;
+  extractedArea?: string;
+  extractedDish?: string;
+  estimatedCostInr?: number;
+  steps?: ResolverPipelineStep[];
+};
+
+export type ResolverPipelineStep = {
+  id: "direct" | "meta" | "ocr-ai" | "place-match" | "review";
+  label: string;
+  status: "passed" | "skipped" | "failed" | "needs_review";
+  detail: string;
 };
 
 export type FeedCreator = {
@@ -983,6 +995,15 @@ export function resolveInstagramSaveCandidate(value: string): InstagramResolverR
       note: "Resolved from pasted text.",
       place: directMatch,
       source: "direct-text",
+      estimatedCostInr: 0,
+      steps: [
+        {
+          id: "direct",
+          label: "Direct text match",
+          status: "passed",
+          detail: "The pasted text already contained a known Rasa seed restaurant.",
+        },
+      ],
     };
   }
 
@@ -1001,6 +1022,15 @@ export function resolveInstagramSaveCandidate(value: string): InstagramResolverR
         note: "Resolved by demo Instagram resolver fixture. Production replaces this with Meta/oEmbed + OCR + AI matching.",
         place: fixturePlace,
         source: "demo-fixture",
+        estimatedCostInr: 0,
+        steps: [
+          {
+            id: "direct",
+            label: "Demo fixture",
+            status: "passed",
+            detail: "Matched a demo shortcode used for local product testing.",
+          },
+        ],
       };
     }
   }
@@ -1012,5 +1042,26 @@ export function resolveInstagramSaveCandidate(value: string): InstagramResolverR
     creatorHandle: extractCreatorHandle(value),
     note: "Queued for the backend resolver: Meta metadata, thumbnail OCR, AI place match, then ops review if confidence is low.",
     source: "unresolved",
+    estimatedCostInr: 0,
+    steps: [
+      {
+        id: "direct",
+        label: "Direct text match",
+        status: "failed",
+        detail: "The plain URL did not contain a known restaurant name.",
+      },
+      {
+        id: "meta",
+        label: "Metadata",
+        status: "skipped",
+        detail: "No metadata provider result was available in this environment.",
+      },
+      {
+        id: "ocr-ai",
+        label: "OCR/AI extraction",
+        status: "skipped",
+        detail: "AI extraction needs API keys or a queued worker.",
+      },
+    ],
   };
 }
