@@ -1324,6 +1324,29 @@ button:not([data-slot]):hover {
   font-weight: 800;
 }
 
+.card-footer-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.text-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--rasa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 0;
+}
+
+.text-button:hover {
+  color: var(--rasa-red);
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;

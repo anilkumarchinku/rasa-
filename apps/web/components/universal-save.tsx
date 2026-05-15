@@ -19,7 +19,7 @@ import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
 
 const sampleInputs = [
   {
-    label: "Instagram",
+    label: "Demo IG",
     value: "https://www.instagram.com/reel/demo Bawarchi RTC X Roads via @hyderabadfoodie",
   },
   {
@@ -197,6 +197,12 @@ export function UniversalSave() {
     setSaves([]);
     setParsed(null);
     setError("");
+    setResolverMessage("");
+  }
+
+  function removeSave(saveId: string) {
+    const nextSaves = saves.filter((save) => save.id !== saveId);
+    persistSaves(nextSaves);
   }
 
   return (
@@ -284,6 +290,10 @@ export function UniversalSave() {
               </button>
             ))}
           </div>
+          <p className="hint">
+            Demo buttons include restaurant text. A plain real Instagram URL is saved first, then
+            stays auto resolving until the resolver can read metadata/OCR/AI signals.
+          </p>
 
           {error && <p className="error-text">{error}</p>}
           {resolverMessage && <p className="form-message">{resolverMessage}</p>}
@@ -378,14 +388,23 @@ export function UniversalSave() {
                     ? "Auto resolving"
                     : `${Math.round(save.confidence * 100)}% match`}
                 </span>
-                <span>{save.sourceUrl ? "Link saved" : save.placeId}</span>
+                <span>
+                  {save.resolutionStatus === "pending"
+                    ? "Needs restaurant detection"
+                    : "Matched restaurant"}
+                </span>
               </div>
               {save.resolverNote && <p className="hint">{save.resolverNote}</p>}
               <div className="tag-row">
                 <span>{save.source}</span>
                 {save.creatorHandle && <span>@{save.creatorHandle}</span>}
               </div>
-              <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
+              <div className="card-footer-row">
+                <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
+                <button className="text-button" type="button" onClick={() => removeSave(save.id)}>
+                  Remove
+                </button>
+              </div>
             </article>
           ))}
           {saves.length === 0 && (
