@@ -81,13 +81,17 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
     return null;
   }
 
+  const isOpaqueApiKey = config.key.startsWith("sb_");
+  const headers = new Headers(init.headers);
+  headers.set("apikey", config.key);
+
+  if (!isOpaqueApiKey) {
+    headers.set("Authorization", `Bearer ${config.key}`);
+  }
+
   return fetch(`${config.url}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      ...init.headers,
-    },
+    headers,
   });
 }
 
