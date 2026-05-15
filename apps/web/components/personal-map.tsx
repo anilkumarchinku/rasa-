@@ -9,7 +9,7 @@ import {
 } from "@rasa/shared";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { loadSavedRecords } from "../lib/save-sync";
+import { loadSavedRecords, retryPendingSavedRecords } from "../lib/save-sync";
 import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
 
 type FilterValue = "all";
@@ -49,11 +49,22 @@ export function PersonalMap() {
   const [activeCuisine, setActiveCuisine] = useState<PhaseZeroCuisine | FilterValue>("all");
   const [selectedSaveId, setSelectedSaveId] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
+  const [resolverStatus, setResolverStatus] = useState(
+    "Resolver checks pending links on page load.",
+  );
 
   useEffect(() => {
     void loadSavedRecords().then(({ mode, saves: loadedSaves }) => {
       setSyncMode(mode);
       setSaves(loadedSaves);
+
+      if (loadedSaves.some((save) => save.resolutionStatus === "pending")) {
+        setResolverStatus("Resolver retry running for pending links...");
+        void retryPendingSavedRecords(loadedSaves).then((resolvedSaves) => {
+          setSaves(resolvedSaves);
+          setResolverStatus("Resolver retry finished. Pins appear only after place verification.");
+        });
+      }
     });
     const storedReminder = window.localStorage.getItem(saturdayReminderStorageKey);
     setSaturdayReminderEnabled(storedReminder ? storedReminder === "enabled" : true);
@@ -114,6 +125,13 @@ export function PersonalMap() {
     const nextValue = !saturdayReminderEnabled;
     setSaturdayReminderEnabled(nextValue);
     window.localStorage.setItem(saturdayReminderStorageKey, nextValue ? "enabled" : "disabled");
+  }
+
+  async function runResolverNow() {
+    setResolverStatus("Resolver retry running for pending links...");
+    const resolvedSaves = await retryPendingSavedRecords(saves);
+    setSaves(resolvedSaves);
+    setResolverStatus("Resolver retry finished. Unverified links stay in the saved list.");
   }
 
   return (
@@ -341,11 +359,14 @@ export function PersonalMap() {
             <div>
               <p className="eyebrow">Auto resolver</p>
               <h2>Reel links waiting for restaurant detection</h2>
-              <p className="hint">
-                In production this queue is processed by Rasa's metadata, OCR, and AI resolver.
-              </p>
+              <p className="hint">{resolverStatus}</p>
             </div>
-            <p className="hint">{pendingSaves.length} resolving</p>
+            <div className="resolver-actions">
+              <p className="hint">{pendingSaves.length} resolving</p>
+              <button className="secondary-button" type="button" onClick={runResolverNow}>
+                Run resolver now
+              </button>
+            </div>
           </div>
           <div className="places-grid">
             {pendingSaves.map((save) => (

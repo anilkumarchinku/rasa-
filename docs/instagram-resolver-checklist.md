@@ -12,6 +12,9 @@ Turn a plain Instagram Reel URL into a trustworthy Rasa saved spot without inven
 - [x] Demo shortcode fixtures for local testing.
 - [x] Optional Meta oEmbed metadata path using `META_INSTAGRAM_OEMBED_TOKEN` or `META_ACCESS_TOKEN`.
 - [x] Optional AI extraction path using `OPENAI_API_KEY`.
+- [x] Browser-side retry for pending local saves when the user opens Map.
+- [x] Supabase resolver runner at `/api/resolver/run`.
+- [x] Vercel cron config to run resolver every 10 minutes.
 - [x] Resolver result states: `resolved`, `pending`, `review`.
 - [x] Confidence handling prevents low-confidence matches from becoming map pins.
 - [x] Saved-card UI distinguishes matched restaurants from links needing detection or verification.
@@ -22,7 +25,8 @@ Turn a plain Instagram Reel URL into a trustworthy Rasa saved spot without inven
 - [ ] Add `META_INSTAGRAM_OEMBED_TOKEN` to Vercel environment variables.
 - [ ] Add `OPENAI_API_KEY` to Vercel environment variables.
 - [ ] Optional: set `OPENAI_RESOLVER_MODEL` to the chosen low-cost model.
-- [ ] Add a worker queue for retries and background processing.
+- [ ] Add `RASA_RESOLVER_CRON_SECRET` to Vercel and call the cron endpoint with auth.
+- [ ] Run Supabase migrations `0001` and `0002`.
 - [ ] Capture thumbnail or video frame where platform terms allow it.
 - [ ] Send OCR text/image to the resolver only when metadata is insufficient.
 - [ ] Match AI extraction against the Rasa restaurant database.

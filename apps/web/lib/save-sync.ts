@@ -1,6 +1,11 @@
 "use client";
 
-import { savedPlacesStorageKey, type SavedPlaceRecord } from "@rasa/shared";
+import {
+  getSeedPlaceById,
+  savedPlacesStorageKey,
+  type InstagramResolverResult,
+  type SavedPlaceRecord,
+} from "@rasa/shared";
 
 const cloudDeviceStorageKey = "rasa.cloud.device-id";
 
@@ -101,6 +106,69 @@ export async function syncSavedRecord(save: SavedPlaceRecord) {
   } catch {
     // Local saves remain the source of truth until cloud sync is available.
   }
+}
+
+export function saveFromResolverResult(
+  save: SavedPlaceRecord,
+  result: InstagramResolverResult,
+): SavedPlaceRecord {
+  if (result.status === "resolved" && result.place) {
+    return {
+      ...save,
+      area: result.place.area,
+      confidence: result.confidence,
+      creatorHandle: result.creatorHandle ?? save.creatorHandle,
+      placeId: result.place.id,
+      placeName: result.place.name,
+      resolutionStatus: "matched",
+      resolvedAt: new Date().toISOString(),
+      resolverNote: result.note,
+    };
+  }
+
+  return {
+    ...save,
+    area: result.extractedArea ?? save.area,
+    confidence: result.confidence,
+    creatorHandle: result.creatorHandle ?? save.creatorHandle,
+    placeName: result.extractedPlaceName ?? save.placeName,
+    resolutionStatus: result.status === "review" ? "review" : "pending",
+    resolverNote: result.note,
+  };
+}
+
+export async function retryPendingSavedRecords(saves: SavedPlaceRecord[]) {
+  const nextSaves = await Promise.all(
+    saves.map(async (save) => {
+      const hasMapPin = Boolean(getSeedPlaceById(save.placeId));
+
+      if (hasMapPin || save.source !== "instagram" || !save.sourceUrl) {
+        return save;
+      }
+
+      try {
+        const response = await fetch("/api/instagram/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: save.sourceUrl }),
+        });
+
+        if (!response.ok) {
+          return save;
+        }
+
+        const result = (await response.json()) as InstagramResolverResult;
+        const updatedSave = saveFromResolverResult(save, result);
+        await syncSavedRecord(updatedSave);
+        return updatedSave;
+      } catch {
+        return save;
+      }
+    }),
+  );
+
+  writeLocalSaves(nextSaves);
+  return nextSaves;
 }
 
 export async function clearSavedRecords() {

@@ -1289,6 +1289,13 @@ button:not([data-slot]):hover {
   margin-bottom: 28px;
 }
 
+.resolver-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .resolver-card {
   border-color: rgba(173, 116, 31, 0.28);
 }
