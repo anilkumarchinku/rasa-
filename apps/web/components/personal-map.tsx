@@ -45,7 +45,7 @@ function uniqueValues<T extends string>(values: T[]) {
 }
 
 function getGoogleMapsUrl(place: EnrichedSave["place"]) {
-  const query = encodeURIComponent(`${place.latitude},${place.longitude}`);
+  const query = encodeURIComponent(`${place.name}, ${place.address}`);
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 

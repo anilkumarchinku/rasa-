@@ -92,6 +92,21 @@ export const hyderabadSeedPlaces = [
     bookingUrl: "https://www.zomato.com/hyderabad/cafe-bahar-basheerbagh",
   },
   {
+    id: "hyd-sri-venkateswara-military-hotel",
+    name: "Sri Venkateswara Military Hotel",
+    area: "Hyderabad",
+    city: RASA_CITY,
+    address: "Hyderabad, Telangana",
+    latitude: 17.405,
+    longitude: 78.475,
+    cuisines: ["Telugu", "South Indian"],
+    priceBand: "budget",
+    vibeTags: ["Home style", "Thali", "Military hotel"],
+    heroDish: "Mini non veg thali",
+    source: "seed",
+    bookingUrl: "https://www.google.com/maps/search/?api=1&query=Sri%20Venkateswara%20Military%20Hotel%20Hyderabad",
+  },
+  {
     id: "hyd-pista-house-charminar",
     name: "Pista House",
     area: "Charminar",
@@ -981,6 +996,8 @@ const demoInstagramResolverText: Record<string, string> = {
   c7roastery: "Roastery Coffee House Banjara Hills cold brew via @cafesofhyd",
   c7shahghouse: "Shah Ghouse Tolichowki mutton biryani via @biryani_diaries",
   c7tatva: "Tatva Jubilee Hills paneer tikka platter via @hyderabadfoodie",
+  dxg9_fnkcbu:
+    "Sri Venkateswara Military Hotel Hyderabad mini non veg thali chicken curry chicken fry fish pulusu ragi sangati via @food.palate._",
 };
 
 export function resolveInstagramSaveCandidate(value: string): InstagramResolverResult {
