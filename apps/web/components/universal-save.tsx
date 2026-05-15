@@ -2,7 +2,6 @@
 
 import {
   parseSaveInput,
-  savedPlacesStorageKey,
   type InstagramResolverResult,
   type ParsedSaveInput,
   type SavedPlaceRecord,
@@ -10,6 +9,12 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { trackRasaEvent } from "../lib/analytics";
+import {
+  clearSavedRecords,
+  loadSavedRecords,
+  syncSavedRecord,
+  writeLocalSaves,
+} from "../lib/save-sync";
 import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
 
 const sampleInputs = [
@@ -35,30 +40,19 @@ function createPendingPlaceId(source: SavedPlaceRecord["source"]) {
   return `pending-${source}-${Date.now()}`;
 }
 
-function readSavedRecords() {
-  const stored = window.localStorage.getItem(savedPlacesStorageKey);
-
-  if (!stored) {
-    return [];
-  }
-
-  try {
-    return JSON.parse(stored) as SavedPlaceRecord[];
-  } catch {
-    window.localStorage.removeItem(savedPlacesStorageKey);
-    return [];
-  }
-}
-
 export function UniversalSave() {
   const [rawInput, setRawInput] = useState("");
   const [parsed, setParsed] = useState<ParsedSaveInput | null>(null);
   const [saves, setSaves] = useState<SavedPlaceRecord[]>([]);
   const [error, setError] = useState("");
   const [resolverMessage, setResolverMessage] = useState("");
+  const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
 
   useEffect(() => {
-    setSaves(readSavedRecords());
+    void loadSavedRecords().then(({ mode, saves: loadedSaves }) => {
+      setSyncMode(mode);
+      setSaves(loadedSaves);
+    });
     trackRasaEvent("page_view", { route: "/save" });
   }, []);
 
@@ -69,12 +63,13 @@ export function UniversalSave() {
       ["Saved", String(saves.length)],
       ["Matched", String(saves.filter((save) => save.confidence >= 0.9).length)],
       ["Creators", String(new Set(saves.map((save) => save.creatorHandle).filter(Boolean)).size)],
+      ["Sync", syncMode === "supabase" ? "Cloud" : "Local"],
     ],
-    [saves],
+    [saves, syncMode],
   );
 
   function persistSaves(nextSaves: SavedPlaceRecord[]) {
-    window.localStorage.setItem(savedPlacesStorageKey, JSON.stringify(nextSaves));
+    writeLocalSaves(nextSaves);
     setSaves(nextSaves);
   }
 
@@ -115,6 +110,7 @@ export function UniversalSave() {
             };
 
       persistSaves(currentSaves.map((record) => (record.id === save.id ? updatedSave : record)));
+      void syncSavedRecord(updatedSave);
       setResolverMessage(
         updatedSave.resolutionStatus === "matched"
           ? `Resolved: ${updatedSave.placeName} is ready on your map.`
@@ -177,6 +173,7 @@ export function UniversalSave() {
 
     const nextSaves = [nextSave, ...saves];
     persistSaves(nextSaves);
+    void syncSavedRecord(nextSave);
     trackRasaEvent("save_created", {
       route: "/save",
       placeId: matchedPlace?.id,
@@ -196,7 +193,7 @@ export function UniversalSave() {
   }
 
   function clearSaves() {
-    window.localStorage.removeItem(savedPlacesStorageKey);
+    void clearSavedRecords();
     setSaves([]);
     setParsed(null);
     setError("");

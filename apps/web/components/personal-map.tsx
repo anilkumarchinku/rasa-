@@ -3,13 +3,13 @@
 import {
   getSeedPlaceById,
   hyderabadSeedPlaces,
-  savedPlacesStorageKey,
   type PhaseZeroCuisine,
   type SavedPlaceRecord,
   type SaveSource,
 } from "@rasa/shared";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { loadSavedRecords } from "../lib/save-sync";
 import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
 
 type FilterValue = "all";
@@ -26,21 +26,6 @@ const mapBounds = {
 };
 
 const saturdayReminderStorageKey = "rasa.reminders.saturday-saved-spots";
-
-function readSavedRecords() {
-  const stored = window.localStorage.getItem(savedPlacesStorageKey);
-
-  if (!stored) {
-    return [];
-  }
-
-  try {
-    return JSON.parse(stored) as SavedPlaceRecord[];
-  } catch {
-    window.localStorage.removeItem(savedPlacesStorageKey);
-    return [];
-  }
-}
 
 function getPinPosition(latitude: number, longitude: number) {
   const x = ((longitude - mapBounds.minLng) / (mapBounds.maxLng - mapBounds.minLng)) * 100;
@@ -63,9 +48,13 @@ export function PersonalMap() {
   const [activeSource, setActiveSource] = useState<SaveSource | FilterValue>("all");
   const [activeCuisine, setActiveCuisine] = useState<PhaseZeroCuisine | FilterValue>("all");
   const [selectedSaveId, setSelectedSaveId] = useState<string | null>(null);
+  const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
 
   useEffect(() => {
-    setSaves(readSavedRecords());
+    void loadSavedRecords().then(({ mode, saves: loadedSaves }) => {
+      setSyncMode(mode);
+      setSaves(loadedSaves);
+    });
     const storedReminder = window.localStorage.getItem(saturdayReminderStorageKey);
     setSaturdayReminderEnabled(storedReminder ? storedReminder === "enabled" : true);
   }, []);
@@ -171,6 +160,10 @@ export function PersonalMap() {
             <div>
               <span>Auto resolving</span>
               <strong>{pendingSaves.length}</strong>
+            </div>
+            <div>
+              <span>Sync</span>
+              <strong>{syncMode === "supabase" ? "Cloud" : "Local"}</strong>
             </div>
           </div>
         </div>
