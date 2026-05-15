@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Rasa",
+    "slug": "rasa",
+    "scheme": "rasa",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "in.rasa.app"
+    },
+    "android": {
+      "package": "in.rasa.app"
+    },
+    "plugins": ["expo-router"]
+  }
+}

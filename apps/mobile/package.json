@@ -1,0 +1,26 @@
+{
+  "name": "@rasa/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rasa/shared": "0.1.0",
+    "expo": "^54.0.0",
+    "expo-router": "~6.0.23",
+    "expo-status-bar": "~2.0.0",
+    "react": "19.1.0",
+    "react-native": "0.81.0"
+  },
+  "devDependencies": {
+    "@rasa/config": "0.1.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.6.3"
+  }
+}

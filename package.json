@@ -1,0 +1,30 @@
+{
+  "name": "rasa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rasa - trust-led dining discovery for India.",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @rasa/web",
+    "dev:web": "npm run dev -w @rasa/web",
+    "dev:mobile": "npm run start -w @rasa/mobile",
+    "build": "npm run build -w @rasa/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format:check": "prettier --check .",
+    "phase:status": "node scripts/phase-status.mjs"
+  },
+  "devDependencies": {
+    "@rasa/config": "0.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}
