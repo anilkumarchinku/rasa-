@@ -37,19 +37,6 @@ function getPinPosition(latitude: number, longitude: number) {
   };
 }
 
-function getPendingPinPosition(index: number) {
-  const positions = [
-    { left: "18%", top: "18%" },
-    { left: "28%", top: "22%" },
-    { left: "38%", top: "18%" },
-    { left: "18%", top: "32%" },
-    { left: "30%", top: "36%" },
-    { left: "42%", top: "31%" },
-  ];
-
-  return positions[index % positions.length];
-}
-
 function uniqueValues<T extends string>(values: T[]) {
   return Array.from(new Set(values));
 }
@@ -302,23 +289,13 @@ export function PersonalMap() {
               );
             })}
 
-            {pendingSaves.map((save, index) => (
-              <button
-                aria-label={`${save.placeName} waiting for restaurant detection`}
-                className="map-pin pending-pin"
-                key={save.id}
-                style={getPendingPinPosition(index)}
-                type="button"
-                onClick={() => setSelectedSaveId(null)}
-              >
-                <span>?</span>
-              </button>
-            ))}
-
-            {pendingSaves.length > 0 && (
-              <div className="pending-map-note">
-                <strong>{pendingSaves.length} saved Reel links</strong>
-                <span>Visible now. Pins move after restaurant detection.</span>
+            {filteredSaves.length === 0 && pendingSaves.length > 0 && (
+              <div className="map-empty-overlay">
+                <strong>No exact restaurant location yet</strong>
+                <span>
+                  Your Reel links are saved below. They become map pins only after Rasa identifies
+                  the restaurant.
+                </span>
               </div>
             )}
           </div>
@@ -327,12 +304,25 @@ export function PersonalMap() {
               <i className="legend-dot saved" /> Saved
             </span>
             <span>
-              <i className="legend-dot pending" /> Saved link, resolving
-            </span>
-            <span>
               <i className="legend-dot seed" /> Seed place
             </span>
           </div>
+          {pendingSaves.length > 0 && (
+            <div className="map-pending-tray" aria-label="Saved links waiting for location">
+              <div>
+                <p className="eyebrow">Saved, not mapped yet</p>
+                <h3>{pendingSaves.length} Reel link{pendingSaves.length === 1 ? "" : "s"} waiting for location</h3>
+              </div>
+              <div className="map-pending-list">
+                {pendingSaves.slice(0, 4).map((save) => (
+                  <article key={save.id}>
+                    <strong>{save.placeName}</strong>
+                    <span>{save.sourceUrl ?? save.rawInput}</span>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <aside className="selected-place-panel">

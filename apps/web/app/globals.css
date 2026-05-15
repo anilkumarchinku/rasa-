@@ -1067,57 +1067,36 @@ button:not([data-slot]):hover {
   width: 16px;
 }
 
-.pending-pin {
-  animation: pendingPulse 1.7s ease-in-out infinite;
-  background: var(--rasa-gold);
-  height: 34px;
-  width: 34px;
-  z-index: 3;
-}
-
-.pending-pin span {
-  font-size: 13px;
-}
-
 .map-pin:hover {
   box-shadow: 0 12px 24px rgba(216, 74, 51, 0.24);
   transform: rotate(-45deg) scale(1.08);
 }
 
-.pending-map-note {
+.map-empty-overlay {
   background: rgba(25, 22, 18, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  bottom: 14px;
   color: #ffffff;
   display: grid;
   gap: 4px;
-  left: 14px;
-  max-width: min(360px, calc(100% - 28px));
+  left: 50%;
+  max-width: min(380px, calc(100% - 28px));
   padding: 12px;
   position: absolute;
+  text-align: center;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 4;
 }
 
-.pending-map-note strong {
+.map-empty-overlay strong {
   font-size: 14px;
 }
 
-.pending-map-note span {
+.map-empty-overlay span {
   color: rgba(255, 255, 255, 0.78);
   font-size: 13px;
   line-height: 1.35;
-}
-
-@keyframes pendingPulse {
-  0%,
-  100% {
-    box-shadow: 0 10px 22px rgba(173, 116, 31, 0.28);
-  }
-
-  50% {
-    box-shadow: 0 0 0 10px rgba(173, 116, 31, 0.12);
-  }
 }
 
 .map-legend {
@@ -1146,13 +1125,56 @@ button:not([data-slot]):hover {
   background: var(--rasa-tomato);
 }
 
-.legend-dot.pending {
-  background: var(--rasa-gold);
-}
-
 .legend-dot.seed {
   background: var(--rasa-teal);
   opacity: 0.45;
+}
+
+.map-pending-tray {
+  background: rgba(173, 116, 31, 0.08);
+  border: 1px solid rgba(173, 116, 31, 0.22);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.map-pending-tray h3 {
+  color: var(--rasa-ink);
+  font-size: 18px;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.map-pending-list {
+  display: grid;
+  gap: 8px;
+}
+
+.map-pending-list article {
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(173, 116, 31, 0.18);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.map-pending-list strong,
+.map-pending-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.map-pending-list strong {
+  color: var(--rasa-ink);
+  font-size: 14px;
+}
+
+.map-pending-list span {
+  color: var(--rasa-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .text-link {
