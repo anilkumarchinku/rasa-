@@ -1331,6 +1331,12 @@ button:not([data-slot]):hover {
   justify-content: space-between;
 }
 
+.inline-actions {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
 .text-button {
   appearance: none;
   background: transparent;
@@ -1801,6 +1807,24 @@ button:not([data-slot]):hover {
   font-weight: 800;
   margin: 0;
   padding: 12px;
+}
+
+.action-message {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.action-message p {
+  margin: 0;
+}
+
+.action-message a {
+  color: var(--rasa-teal);
+  flex: 0 0 auto;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .claim-empty {

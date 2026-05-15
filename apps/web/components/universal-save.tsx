@@ -296,7 +296,12 @@ export function UniversalSave() {
           </p>
 
           {error && <p className="error-text">{error}</p>}
-          {resolverMessage && <p className="form-message">{resolverMessage}</p>}
+          {resolverMessage && (
+            <div className="form-message action-message">
+              <p>{resolverMessage}</p>
+              <Link href="/map">View in Map</Link>
+            </div>
+          )}
 
           <div className="button-row">
             <button className="secondary-button" type="button" onClick={clearSaves}>
@@ -403,9 +408,14 @@ export function UniversalSave() {
               </div>
               <div className="card-footer-row">
                 <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
-                <button className="text-button" type="button" onClick={() => removeSave(save.id)}>
-                  Remove
-                </button>
+                <div className="inline-actions">
+                  <Link className="text-button" href="/map">
+                    View in Map
+                  </Link>
+                  <button className="text-button" type="button" onClick={() => removeSave(save.id)}>
+                    Remove
+                  </button>
+                </div>
               </div>
             </article>
           ))}
