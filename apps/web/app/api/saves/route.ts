@@ -91,6 +91,16 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
   });
 }
 
+async function supabaseError(response: Response) {
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text || response.statusText;
+  }
+}
+
 export async function GET(request: Request) {
   const userKey = userKeyFromRequest(request);
   const response = await supabaseFetch(
@@ -102,7 +112,15 @@ export async function GET(request: Request) {
   }
 
   if (!response.ok) {
-    return NextResponse.json({ mode: "local", saves: [] }, { status: 200 });
+    return NextResponse.json(
+      {
+        mode: "local",
+        error: "Supabase read failed.",
+        detail: await supabaseError(response),
+        saves: [],
+      },
+      { status: 200 },
+    );
   }
 
   const rows = (await response.json()) as SavedPlaceRow[];
@@ -135,7 +153,15 @@ export async function POST(request: Request) {
   }
 
   if (!response.ok) {
-    return NextResponse.json({ mode: "local", save: body.save }, { status: 200 });
+    return NextResponse.json(
+      {
+        mode: "local",
+        error: "Supabase save failed.",
+        detail: await supabaseError(response),
+        save: body.save,
+      },
+      { status: 200 },
+    );
   }
 
   const rows = (await response.json()) as SavedPlaceRow[];
@@ -152,8 +178,17 @@ export async function DELETE(request: Request) {
     method: "DELETE",
   });
 
-  if (!response || !response.ok) {
+  if (!response) {
     return NextResponse.json({ mode: "local", cleared: true });
+  }
+
+  if (!response.ok) {
+    return NextResponse.json({
+      mode: "local",
+      cleared: true,
+      error: "Supabase clear failed.",
+      detail: await supabaseError(response),
+    });
   }
 
   return NextResponse.json({ mode: "supabase", cleared: true });

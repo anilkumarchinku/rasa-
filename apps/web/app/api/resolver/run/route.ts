@@ -61,6 +61,16 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
   });
 }
 
+async function supabaseError(response: Response) {
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text || response.statusText;
+  }
+}
+
 function rowToSave(row: SavedPlaceRow): SavedPlaceRecord {
   return {
     id: row.id,
@@ -148,6 +158,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       mode: "supabase",
       error: "Could not load pending saved places.",
+      detail: pendingResponse ? await supabaseError(pendingResponse) : "No response from Supabase.",
       processed: 0,
       updated: 0,
     });
