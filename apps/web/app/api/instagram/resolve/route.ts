@@ -612,6 +612,13 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ...fallbackResult,
+    candidateText: candidateText || fallbackResult.candidateText,
+    confidence: Math.max(fallbackResult.confidence, publicMetadataResult?.confidence ?? 0),
+    creatorHandle: publicMetadataResult?.creatorHandle ?? fallbackResult.creatorHandle,
+    note:
+      publicMetadataResult?.note ??
+      "Resolver finished quickly, but this Reel did not expose restaurant text. It will need Meta/OpenAI extraction or review.",
+    thumbnailUrl: publicMetadataResult?.thumbnailUrl ?? fallbackResult.thumbnailUrl,
     steps: mergeSteps(officialResult?.steps, publicMetadataResult?.steps, fallbackResult.steps, [
       pipelineStep(
         "ocr-ai",

@@ -429,7 +429,7 @@ export function PersonalMap() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Auto resolver</p>
-              <h2>Reel links waiting for restaurant detection</h2>
+              <h2>Reel links saved, not mapped yet</h2>
               <p className="hint">{resolverStatus}</p>
             </div>
             <div className="resolver-actions">
@@ -448,12 +448,15 @@ export function PersonalMap() {
                   <p className="place-address">{save.sourceUrl ?? save.rawInput}</p>
                 </div>
                 <div className="matched-place-strip pending-strip">
-                  <span>Automatic process</span>
-                  <strong>Metadata → OCR → AI place match → map pin</strong>
+                  <span>{save.confidence > 0.2 ? "Resolver checked" : "Needs more signal"}</span>
+                  <strong>
+                    {save.resolverNote ??
+                      "Saved instantly, but this Reel did not expose restaurant text yet."}
+                  </strong>
                 </div>
                 <div className="tag-row">
                   <span>{save.source}</span>
-                  <span>Queued</span>
+                  <span>{save.confidence > 0.2 ? "Checked" : "Queued"}</span>
                 </div>
                 <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
               </article>
