@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clearTimeout, setTimeout } from "node:timers";
 import {
   extractCreatorHandle,
   matchSeedPlace,
@@ -29,6 +30,10 @@ type AiExtractionResponse = {
   evidence?: string;
 };
 
+const metaTimeoutMs = 5000;
+const publicMetadataTimeoutMs = 6000;
+const aiTimeoutMs = 12000;
+
 function accessToken() {
   return process.env.META_INSTAGRAM_OEMBED_TOKEN ?? process.env.META_ACCESS_TOKEN;
 }
@@ -51,6 +56,24 @@ function htmlToText(value: string) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function fetchWithTimeout(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit = {},
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function decodeHtmlEntities(value: string) {
@@ -189,7 +212,7 @@ async function resolveWithMetaOembed(url: string): Promise<InstagramResolverResu
   endpoint.searchParams.set("fields", "author_name,thumbnail_url,html");
   endpoint.searchParams.set("access_token", token);
 
-  const response = await fetch(endpoint, { next: { revalidate: 3600 } });
+  const response = await fetchWithTimeout(endpoint, { next: { revalidate: 3600 } }, metaTimeoutMs);
 
   if (!response.ok) {
     return null;
@@ -246,15 +269,19 @@ async function resolveWithMetaOembed(url: string): Promise<InstagramResolverResu
 
 async function resolveWithPublicPageMetadata(url: string): Promise<InstagramResolverResult | null> {
   try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          Accept: "text/html,application/xhtml+xml",
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+        },
+        next: { revalidate: 1800 },
+        redirect: "follow",
       },
-      next: { revalidate: 1800 },
-      redirect: "follow",
-    });
+      publicMetadataTimeoutMs,
+    );
 
     if (!response.ok) {
       return {
@@ -340,7 +367,7 @@ async function resolveWithPublicPageMetadata(url: string): Promise<InstagramReso
       status: "pending",
       confidence: 0.2,
       candidateText: url,
-      note: "Instagram public page metadata fetch failed. Rasa kept this Reel queued.",
+        note: "Instagram public page metadata timed out or failed. Rasa kept this Reel queued.",
       source: "unresolved",
       estimatedCostInr: 0,
       steps: [
@@ -348,7 +375,7 @@ async function resolveWithPublicPageMetadata(url: string): Promise<InstagramReso
           "meta",
           "Public metadata",
           "failed",
-          "Public page fetch failed before metadata could be read.",
+          `Public page fetch did not finish within ${publicMetadataTimeoutMs / 1000}s.`,
         ),
       ],
     };
@@ -392,27 +419,31 @@ async function resolveWithAiExtraction(input: {
     });
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.model,
-      input: [
-        {
-          role: "user",
-          content,
-        },
-      ],
-      text: {
-        format: {
-          type: "json_object",
-        },
+  const response = await fetchWithTimeout(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.key}`,
+        "Content-Type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: config.model,
+        input: [
+          {
+            role: "user",
+            content,
+          },
+        ],
+        text: {
+          format: {
+            type: "json_object",
+          },
+        },
+      }),
+    },
+    aiTimeoutMs,
+  );
 
   if (!response.ok) {
     return {
@@ -530,6 +561,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const fallbackResult = resolveInstagramSaveCandidate(url);
+
+  if (fallbackResult.status === "resolved") {
+    return NextResponse.json(fallbackResult);
+  }
+
   const officialResult = await resolveWithMetaOembed(url);
 
   if (officialResult?.status === "resolved") {
@@ -540,12 +577,6 @@ export async function POST(request: Request) {
 
   if (publicMetadataResult?.status === "resolved") {
     return NextResponse.json(publicMetadataResult);
-  }
-
-  const fallbackResult = resolveInstagramSaveCandidate(url);
-
-  if (fallbackResult.status === "resolved") {
-    return NextResponse.json(fallbackResult);
   }
 
   const candidateText = [

@@ -32,6 +32,8 @@ const sampleInputs = [
   },
 ];
 
+const resolverTimeoutMs = 25000;
+
 function createSaveId() {
   return `save-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -78,14 +80,20 @@ export function UniversalSave() {
       return;
     }
 
-    setResolverMessage("Resolver running: metadata → OCR → AI place match.");
+    setResolverMessage("Saved instantly. Fast resolver running in the background.");
 
     try {
-      const response = await fetch("/api/instagram/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: save.sourceUrl }),
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), resolverTimeoutMs);
+      const response = await fetch(
+        "/api/instagram/resolve",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: save.sourceUrl }),
+          signal: controller.signal,
+        },
+      ).finally(() => window.clearTimeout(timeout));
       const result = (await response.json()) as InstagramResolverResult;
 
       const updatedSave: SavedPlaceRecord =
@@ -117,7 +125,9 @@ export function UniversalSave() {
           : "Saved to your personal list. Rasa will keep resolving this Reel in the background.",
       );
     } catch {
-      setResolverMessage("Saved to your personal list. Resolver will retry later.");
+      setResolverMessage(
+        "Saved to your personal list. Resolver did not finish fast enough, so it will retry later.",
+      );
     }
   }
 
@@ -187,7 +197,9 @@ export function UniversalSave() {
     });
     setRawInput("");
     setError(
-      matchedPlace ? "" : "Saved. Rasa is automatically identifying the restaurant from this link.",
+      matchedPlace
+        ? ""
+        : "Saved immediately. Rasa is identifying the restaurant in the background.",
     );
     void runResolver(nextSave, nextSaves);
   }

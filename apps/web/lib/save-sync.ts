@@ -8,6 +8,7 @@ import {
 } from "@rasa/shared";
 
 const cloudDeviceStorageKey = "rasa.cloud.device-id";
+const resolverRetryTimeoutMs = 25000;
 
 type CloudSaveResponse = {
   mode: "local" | "supabase";
@@ -147,11 +148,17 @@ export async function retryPendingSavedRecords(saves: SavedPlaceRecord[]) {
       }
 
       try {
-        const response = await fetch("/api/instagram/resolve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: save.sourceUrl }),
-        });
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), resolverRetryTimeoutMs);
+        const response = await fetch(
+          "/api/instagram/resolve",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: save.sourceUrl }),
+            signal: controller.signal,
+          },
+        ).finally(() => window.clearTimeout(timeout));
 
         if (!response.ok) {
           return save;
