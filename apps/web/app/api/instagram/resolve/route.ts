@@ -53,6 +53,36 @@ function htmlToText(value: string) {
     .trim();
 }
 
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractMetaContent(html: string, key: string) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const propertyPattern = new RegExp(
+    `<meta[^>]+(?:property|name)=["']${escapedKey}["'][^>]+content=["']([^"']+)["'][^>]*>`,
+    "i",
+  );
+  const contentPattern = new RegExp(
+    `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escapedKey}["'][^>]*>`,
+    "i",
+  );
+  const match = html.match(propertyPattern) ?? html.match(contentPattern);
+  return match?.[1] ? decodeHtmlEntities(match[1]) : undefined;
+}
+
+function extractTitle(html: string) {
+  const title = html.match(/<title[^>]*>(.*?)<\/title>/i)?.[1];
+  return title ? decodeHtmlEntities(htmlToText(title)) : undefined;
+}
+
 function pipelineStep(
   id: ResolverPipelineStep["id"],
   label: string,
@@ -212,6 +242,117 @@ async function resolveWithMetaOembed(url: string): Promise<InstagramResolverResu
       pipelineStep("place-match", "Place match", "passed", `Matched ${place.name}.`),
     ],
   };
+}
+
+async function resolveWithPublicPageMetadata(url: string): Promise<InstagramResolverResult | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+      },
+      next: { revalidate: 1800 },
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      return {
+        status: "pending",
+        confidence: 0.2,
+        candidateText: url,
+        note: "Instagram public page metadata could not be fetched. Rasa kept this Reel queued.",
+        source: "unresolved",
+        estimatedCostInr: 0,
+        steps: [
+          pipelineStep(
+            "meta",
+            "Public metadata",
+            "failed",
+            `Instagram page returned ${response.status}.`,
+          ),
+        ],
+      };
+    }
+
+    const html = await response.text();
+    const candidateText = [
+      extractMetaContent(html, "og:title"),
+      extractMetaContent(html, "og:description"),
+      extractMetaContent(html, "description"),
+      extractTitle(html),
+      url,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const thumbnailUrl =
+      extractMetaContent(html, "og:image") ?? extractMetaContent(html, "twitter:image");
+    const place = matchSeedPlace(candidateText);
+
+    if (place) {
+      return {
+        status: "resolved",
+        confidence: 0.78,
+        candidateText,
+        creatorHandle: extractCreatorHandle(candidateText),
+        note: `Resolved from public Instagram page metadata: ${place.name}.`,
+        place,
+        source: "direct-text",
+        thumbnailUrl,
+        estimatedCostInr: 0,
+        steps: [
+          pipelineStep(
+            "meta",
+            "Public metadata",
+            "passed",
+            "Public page metadata contained enough text to match a known Rasa restaurant.",
+          ),
+          pipelineStep("place-match", "Place match", "passed", `Matched ${place.name}.`),
+        ],
+      };
+    }
+
+    return {
+      status: "pending",
+      confidence: candidateText.length > url.length ? 0.34 : 0.2,
+      candidateText,
+      creatorHandle: extractCreatorHandle(candidateText),
+      note:
+        candidateText.length > url.length
+          ? "Public Instagram metadata was fetched, but no known restaurant matched yet."
+          : "Public Instagram metadata did not expose restaurant text. Rasa kept this Reel queued.",
+      source: "unresolved",
+      thumbnailUrl,
+      estimatedCostInr: 0,
+      steps: [
+        pipelineStep(
+          "meta",
+          "Public metadata",
+          candidateText.length > url.length ? "passed" : "needs_review",
+          candidateText.length > url.length
+            ? "Public metadata was fetched, but no known restaurant matched."
+            : "Public metadata had no useful restaurant text.",
+        ),
+      ],
+    };
+  } catch {
+    return {
+      status: "pending",
+      confidence: 0.2,
+      candidateText: url,
+      note: "Instagram public page metadata fetch failed. Rasa kept this Reel queued.",
+      source: "unresolved",
+      estimatedCostInr: 0,
+      steps: [
+        pipelineStep(
+          "meta",
+          "Public metadata",
+          "failed",
+          "Public page fetch failed before metadata could be read.",
+        ),
+      ],
+    };
+  }
 }
 
 async function resolveWithAiExtraction(input: {
@@ -395,20 +536,32 @@ export async function POST(request: Request) {
     return NextResponse.json(officialResult);
   }
 
+  const publicMetadataResult = await resolveWithPublicPageMetadata(url);
+
+  if (publicMetadataResult?.status === "resolved") {
+    return NextResponse.json(publicMetadataResult);
+  }
+
   const fallbackResult = resolveInstagramSaveCandidate(url);
 
   if (fallbackResult.status === "resolved") {
     return NextResponse.json(fallbackResult);
   }
 
-  const candidateText = [body.captionText, body.ocrText, officialResult?.candidateText, url]
+  const candidateText = [
+    body.captionText,
+    body.ocrText,
+    officialResult?.candidateText,
+    publicMetadataResult?.candidateText,
+    url,
+  ]
     .filter(Boolean)
     .join("\n");
   const heuristicResult = resolveWithHeuristicExtraction({
     url,
     candidateText,
-    thumbnailUrl: body.thumbnailUrl ?? officialResult?.thumbnailUrl,
-    inheritedSteps: mergeSteps(officialResult?.steps, fallbackResult.steps),
+    thumbnailUrl: body.thumbnailUrl ?? officialResult?.thumbnailUrl ?? publicMetadataResult?.thumbnailUrl,
+    inheritedSteps: mergeSteps(officialResult?.steps, publicMetadataResult?.steps, fallbackResult.steps),
   });
 
   if (heuristicResult) {
@@ -418,8 +571,8 @@ export async function POST(request: Request) {
   const aiResult = await resolveWithAiExtraction({
     url,
     candidateText,
-    thumbnailUrl: body.thumbnailUrl ?? officialResult?.thumbnailUrl,
-    inheritedSteps: mergeSteps(officialResult?.steps, fallbackResult.steps),
+    thumbnailUrl: body.thumbnailUrl ?? officialResult?.thumbnailUrl ?? publicMetadataResult?.thumbnailUrl,
+    inheritedSteps: mergeSteps(officialResult?.steps, publicMetadataResult?.steps, fallbackResult.steps),
   });
 
   if (aiResult) {
@@ -428,7 +581,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ...fallbackResult,
-    steps: mergeSteps(officialResult?.steps, fallbackResult.steps, [
+    steps: mergeSteps(officialResult?.steps, publicMetadataResult?.steps, fallbackResult.steps, [
       pipelineStep(
         "ocr-ai",
         "OCR/AI extraction",
