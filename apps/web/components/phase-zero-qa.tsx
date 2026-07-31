@@ -107,6 +107,7 @@ export function PhaseZeroQa() {
         <div className="nav-links">
           <Link href="/analytics">Analytics</Link>
           <Link href="/save">Save</Link>
+          <Link href="/build">Build board</Link>
           <Link href="/qa">QA</Link>
         </div>
       </nav>

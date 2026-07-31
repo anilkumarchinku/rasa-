@@ -2,7 +2,7 @@ node_modules
 .next
 .expo
 dist
-build
+/build
 coverage
 .turbo
 .vercel
