@@ -42,30 +42,6 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               >
                 Map
               </Link>
-              <Link
-                className="rounded-md px-2 py-2 text-center text-muted-foreground hover:bg-accent hover:text-foreground sm:px-3"
-                href="/live"
-              >
-                Live
-              </Link>
-              <Link
-                className="rounded-md px-2 py-2 text-center text-muted-foreground hover:bg-accent hover:text-foreground sm:px-3"
-                href="/book"
-              >
-                Book
-              </Link>
-              <Link
-                className="rounded-md px-2 py-2 text-center text-muted-foreground hover:bg-accent hover:text-foreground sm:px-3"
-                href="/rewards"
-              >
-                Rewards
-              </Link>
-              <Link
-                className="rounded-md px-2 py-2 text-center text-muted-foreground hover:bg-accent hover:text-foreground sm:px-3"
-                href="/build"
-              >
-                Build
-              </Link>
             </nav>
           </div>
         </header>

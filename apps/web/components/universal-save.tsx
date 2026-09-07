@@ -1,255 +1,141 @@
 "use client";
 
-import {
-  parseSaveInput,
-  type InstagramResolverResult,
-  type ParsedSaveInput,
-  type SavedPlaceRecord,
-} from "@rasa/shared";
+import type { SavedPlaceRecord } from "@rasa/shared";
+import { BookmarkPlus, ExternalLink, MapPinned, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { trackRasaEvent } from "../lib/analytics";
+import { normalizeInstagramReelUrl } from "../lib/instagram-url";
 import {
   clearSavedRecords,
+  deleteSavedRecord,
   loadSavedRecords,
   syncSavedRecord,
   writeLocalSaves,
 } from "../lib/save-sync";
-import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
-
-const sampleInputs = [
-  {
-    label: "Demo IG",
-    value: "https://www.instagram.com/reel/demo Bawarchi RTC X Roads via @hyderabadfoodie",
-  },
-  {
-    label: "YouTube",
-    value: "YouTube short: Shah Ghouse Tolichowki mutton biryani @biryani_diaries",
-  },
-  {
-    label: "WhatsApp",
-    value: "WhatsApp forward: Try Roastery Coffee House Banjara Hills this weekend",
-  },
-];
-
-const resolverTimeoutMs = 25000;
+import { Button, ButtonLink } from "./ui/button";
+import { getRouteImage, VisualImage } from "./visual-image";
 
 function createSaveId() {
-  return `save-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function createPendingPlaceId(source: SavedPlaceRecord["source"]) {
-  return `pending-${source}-${Date.now()}`;
+  return `save-${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
 }
 
 export function UniversalSave() {
   const [rawInput, setRawInput] = useState("");
-  const [parsed, setParsed] = useState<ParsedSaveInput | null>(null);
   const [saves, setSaves] = useState<SavedPlaceRecord[]>([]);
-  const [error, setError] = useState("");
-  const [resolverMessage, setResolverMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
+  const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadSavedRecords().then(({ mode, saves: loadedSaves }) => {
       setSyncMode(mode);
       setSaves(loadedSaves);
     });
-    trackRasaEvent("page_view", { route: "/save" });
   }, []);
 
   const latestSave = saves[0];
-
-  const saveStats = useMemo(
+  const summary = useMemo(
     () => [
-      ["Saved", String(saves.length)],
-      ["Matched", String(saves.filter((save) => save.confidence >= 0.9).length)],
-      ["Creators", String(new Set(saves.map((save) => save.creatorHandle).filter(Boolean)).size)],
-      ["Sync", syncMode === "supabase" ? "Cloud" : "Local"],
+      ["Saved Reels", String(saves.length)],
+      ["Private map", "Ready"],
+      ["Storage", syncMode === "supabase" ? "Cloud" : "This device"],
     ],
-    [saves, syncMode],
+    [saves.length, syncMode],
   );
 
-  function persistSaves(nextSaves: SavedPlaceRecord[]) {
+  function persist(nextSaves: SavedPlaceRecord[]) {
     writeLocalSaves(nextSaves);
     setSaves(nextSaves);
   }
 
-  async function runResolver(save: SavedPlaceRecord, currentSaves: SavedPlaceRecord[]) {
-    if (!save.sourceUrl || save.resolutionStatus !== "pending" || save.source !== "instagram") {
-      return;
-    }
-
-    setResolverMessage("Saved instantly. Fast resolver running in the background.");
-
-    try {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), resolverTimeoutMs);
-      const response = await fetch(
-        "/api/instagram/resolve",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: save.sourceUrl }),
-          signal: controller.signal,
-        },
-      ).finally(() => window.clearTimeout(timeout));
-      const result = (await response.json()) as InstagramResolverResult;
-
-      const updatedSave: SavedPlaceRecord =
-        result.status === "resolved" && result.place
-          ? {
-              ...save,
-              placeId: result.place.id,
-              placeName: result.place.name,
-              area: result.place.area,
-              creatorHandle: result.creatorHandle ?? save.creatorHandle,
-              confidence: result.confidence,
-              resolutionStatus: "matched",
-              resolverNote: result.note,
-              resolvedAt: new Date().toISOString(),
-            }
-          : {
-              ...save,
-              creatorHandle: result.creatorHandle ?? save.creatorHandle,
-              confidence: result.confidence,
-              resolutionStatus: result.status === "review" ? "review" : "pending",
-              resolverNote: result.note,
-            };
-
-      persistSaves(currentSaves.map((record) => (record.id === save.id ? updatedSave : record)));
-      void syncSavedRecord(updatedSave);
-      setResolverMessage(
-        updatedSave.resolutionStatus === "matched"
-          ? `Resolved: ${updatedSave.placeName} is ready on your map.`
-          : "Saved to your personal list. Rasa will keep resolving this Reel in the background.",
-      );
-    } catch {
-      setResolverMessage(
-        "Saved to your personal list. Resolver did not finish fast enough, so it will retry later.",
-      );
-    }
-  }
-
-  function saveRecommendation(event: FormEvent<HTMLFormElement>) {
+  async function saveReel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedInput = rawInput.trim();
+    const sourceUrl = normalizeInstagramReelUrl(rawInput);
 
-    if (!trimmedInput) {
-      setError("Paste an Instagram link, creator link, forward, or place note first.");
-      setParsed(null);
+    if (!sourceUrl) {
+      setMessage("Paste a full Instagram Reel link. It should begin with instagram.com/reel/.");
       return;
     }
 
-    const nextParsed = parseSaveInput(trimmedInput);
-    const matchedPlace = nextParsed.matchedPlace;
-    const canSavePendingLink = Boolean(nextParsed.url) && nextParsed.source !== "unknown";
-
-    setParsed(nextParsed);
-    trackRasaEvent("save_parsed", {
-      route: "/save",
-      placeId: matchedPlace?.id,
-      placeName: matchedPlace?.name,
-      creatorHandle: nextParsed.creatorHandle,
-      metadata: {
-        confidence: nextParsed.confidence,
-        source: nextParsed.source,
-        matched: Boolean(matchedPlace),
-      },
-    });
-
-    if (!matchedPlace && !canSavePendingLink) {
-      setError("Rasa needs a valid link to save this without a place match.");
-      return;
-    }
+    setSaving(true);
+    setMessage("");
 
     const nextSave: SavedPlaceRecord = {
       id: createSaveId(),
-      placeId: matchedPlace?.id ?? createPendingPlaceId(nextParsed.source),
-      placeName: matchedPlace?.name ?? "Instagram Reel",
-      area: matchedPlace?.area ?? "Auto resolving",
-      source: nextParsed.source,
-      sourceUrl: nextParsed.url,
-      creatorHandle: nextParsed.creatorHandle,
-      rawInput: trimmedInput,
-      confidence: nextParsed.confidence,
-      resolutionStatus: matchedPlace ? "matched" : "pending",
-      resolverNote: matchedPlace
-        ? "Resolved from pasted text."
-        : "Queued for the automatic Instagram resolver.",
-      resolvedAt: matchedPlace ? new Date().toISOString() : undefined,
+      placeId: "saved-reel",
+      placeName: "Instagram Reel",
+      area: "Saved Reel",
+      source: "instagram",
+      sourceUrl,
+      rawInput: sourceUrl,
+      confidence: 0,
+      resolutionStatus: "pending",
+      resolverNote: "Saved to your Rasa Map.",
       createdAt: new Date().toISOString(),
     };
 
-    const nextSaves = [nextSave, ...saves];
-    persistSaves(nextSaves);
-    void syncSavedRecord(nextSave);
-    trackRasaEvent("save_created", {
-      route: "/save",
-      placeId: matchedPlace?.id,
-      placeName: matchedPlace?.name ?? nextSave.placeName,
-      creatorHandle: nextSave.creatorHandle,
-      metadata: {
-        confidence: nextSave.confidence,
-        source: nextSave.source,
-        pending: nextSave.resolutionStatus === "pending",
-      },
-    });
+    const optimisticSaves = [nextSave, ...saves];
+    persist(optimisticSaves);
     setRawInput("");
-    setError(
-      matchedPlace
-        ? ""
-        : "Saved immediately. Rasa is identifying the restaurant in the background.",
+
+    const result = await syncSavedRecord(nextSave);
+    setSyncMode(result.mode);
+    persist(optimisticSaves.map((save) => (save.id === nextSave.id ? result.save : save)));
+    setMessage(
+      result.mode === "supabase"
+        ? "Saved privately to your Rasa Map."
+        : "Saved on this device. Cloud sync will resume when Rasa is connected.",
     );
-    void runResolver(nextSave, nextSaves);
+    setSaving(false);
   }
 
-  function clearSaves() {
-    void clearSavedRecords();
-    setSaves([]);
-    setParsed(null);
-    setError("");
-    setResolverMessage("");
+  async function removeSave(id: string) {
+    setRemovingId(id);
+    const removed = await deleteSavedRecord(id);
+
+    if (removed || syncMode === "local") {
+      persist(saves.filter((save) => save.id !== id));
+    } else {
+      setMessage("Could not remove this saved Reel. Please try again.");
+    }
+
+    setRemovingId(null);
   }
 
-  function removeSave(saveId: string) {
-    const nextSaves = saves.filter((save) => save.id !== saveId);
-    persistSaves(nextSaves);
+  async function clearSaves() {
+    const cleared = await clearSavedRecords();
+
+    if (cleared || syncMode === "local") {
+      persist([]);
+      setMessage("Your saved Reels are cleared.");
+    } else {
+      setMessage("Could not clear cloud saves. Please try again.");
+    }
   }
 
   return (
     <main className="save-shell">
-      <nav className="topbar" aria-label="Rasa navigation">
-        <Link className="brand-lockup" href="/">
-          <span className="brand-mark">R</span>
-          <span>Rasa</span>
-        </Link>
-        <div className="nav-links">
-          <Link href="/save">Save</Link>
-          <Link href="/places">Places</Link>
-        </div>
-      </nav>
-
       <section className="save-hero">
         <div>
-          <p className="eyebrow">Phase 0.5</p>
-          <h1>Save a creator recommendation before it disappears.</h1>
+          <p className="eyebrow">Rasa Saved Reels</p>
+          <h1>Save the food Reel. Find it when you are hungry.</h1>
           <p className="lede">
-            Paste a creator link, YouTube note, WhatsApp forward, or manual place text. Rasa detects
-            the source, creator handle, and seed place attribution.
+            Paste an Instagram Reel link once. Rasa keeps it in your private Hyderabad map so it
+            does not disappear into your Instagram saves.
           </p>
         </div>
         <div className="hero-media-stack">
           <div className="visual-card">
             <VisualImage
-              alt="Saved food recommendation preview"
+              alt="Friends sharing a restaurant meal"
               className="responsive-visual"
               priority
               src={getRouteImage("save")}
             />
           </div>
           <div className="metric-row">
-            {saveStats.map(([label, value]) => (
+            {summary.map(([label, value]) => (
               <div key={label}>
                 <span>{label}</span>
                 <strong>{value}</strong>
@@ -259,186 +145,122 @@ export function UniversalSave() {
         </div>
       </section>
 
-      <section className="save-layout" aria-label="Universal Save workflow">
-        <form className="save-panel primary-save-panel" onSubmit={saveRecommendation}>
+      <section className="save-layout" aria-label="Save Instagram Reel">
+        <form className="save-panel primary-save-panel" onSubmit={saveReel}>
           <div className="panel-heading">
-            <p className="eyebrow">Paste</p>
-            <h2>Paste once, save immediately</h2>
-            <p>
-              Rasa saves the link even when Instagram does not expose the restaurant yet. Matched
-              places become map pins; unresolved Reel links move into the map's auto-resolving
-              inbox.
-            </p>
-          </div>
-
-          <div className="step-rail" aria-label="Save steps">
-            <span className={rawInput ? "step-dot active" : "step-dot"}>Paste</span>
-            <span className={parsed ? "step-dot active" : "step-dot"}>Parse</span>
-            <span className={latestSave ? "step-dot active" : "step-dot"}>Saved</span>
+            <p className="eyebrow">One simple thing</p>
+            <h2>Paste a Reel. Keep the plan.</h2>
+            <p>Only Instagram Reel links are supported in this first Rasa release.</p>
           </div>
 
           <label>
-            Creator link or note
-            <textarea
-              placeholder="Paste an Instagram Reel URL, YouTube link, WhatsApp forward, or place note..."
-              value={rawInput}
+            Instagram Reel link
+            <input
+              autoComplete="url"
+              inputMode="url"
               onChange={(event) => setRawInput(event.target.value)}
+              placeholder="https://www.instagram.com/reel/..."
+              required
+              type="url"
+              value={rawInput}
             />
           </label>
 
-          <div className="sample-row">
-            {sampleInputs.map((sample) => (
-              <button
-                className="sample-button"
-                key={sample.label}
-                type="button"
-                onClick={() => {
-                  setRawInput(sample.value);
-                  setParsed(null);
-                  setError("");
-                }}
-              >
-                {sample.label}
-              </button>
-            ))}
-          </div>
-          <p className="hint">
-            Demo buttons include restaurant text. A plain real Instagram URL is saved first, then
-            stays auto resolving until the resolver can read metadata/OCR/AI signals.
-          </p>
-
-          {error && <p className="error-text">{error}</p>}
-          {resolverMessage && (
-            <div className="form-message action-message">
-              <p>{resolverMessage}</p>
-              <Link href="/map">View in Map</Link>
+          {message && (
+            <div className="form-message action-message" role="status">
+              <p>{message}</p>
+              {latestSave && <Link href="/map">Open your Rasa Map</Link>}
             </div>
           )}
 
           <div className="button-row">
-            <button className="secondary-button" type="button" onClick={clearSaves}>
-              Clear saves
-            </button>
-            <button type="submit">Save recommendation</button>
+            <Button disabled={saving} type="submit">
+              <BookmarkPlus />
+              {saving ? "Saving..." : "Save to my map"}
+            </Button>
+            <Button
+              disabled={saves.length === 0}
+              onClick={() => void clearSaves()}
+              type="button"
+              variant="outline"
+            >
+              <Trash2 />
+              Clear
+            </Button>
           </div>
         </form>
 
-        <aside
-          className={
-            parsed?.matchedPlace ? "save-panel match-panel matched" : "save-panel match-panel"
-          }
-        >
+        <aside className="save-panel match-panel">
           <div className="panel-heading">
-            <p className="eyebrow">Attribution</p>
-            <h2>{parsed?.matchedPlace ? parsed.matchedPlace.name : "Waiting for a match"}</h2>
+            <p className="eyebrow">What happens next</p>
+            <h2>It stays with you.</h2>
             <p>
-              {parsed?.matchedPlace
-                ? "Looks good. Save it with the creator signal attached."
-                : parsed?.url
-                  ? "The link is saved and queued for automatic restaurant detection."
-                  : "Paste a recommendation to preview attribution."}
+              The Reel is stored under a private browser session. Open the Map any time to see
+              everything you saved and reopen the original Reel.
             </p>
           </div>
-
           <div className="summary-list">
             <div>
-              <span>Source</span>
-              <strong>{parsed?.source ?? "None"}</strong>
+              <span>Link saved</span>
+              <strong>Immediately</strong>
             </div>
             <div>
-              <span>Creator</span>
-              <strong>{parsed?.creatorHandle ? `@${parsed.creatorHandle}` : "Not detected"}</strong>
+              <span>Restaurant location</span>
+              <strong>Coming next</strong>
             </div>
             <div>
-              <span>Confidence</span>
-              <strong>{parsed ? `${Math.round(parsed.confidence * 100)}%` : "0%"}</strong>
+              <span>Who can see it</span>
+              <strong>Only you</strong>
             </div>
           </div>
-
-          {parsed?.matchedPlace && (
-            <>
-              <VisualImage
-                alt={`${parsed.matchedPlace.name} matched place preview`}
-                className="card-visual"
-                src={getPlaceImage(parsed.matchedPlace.id)}
-              />
-              <div className="matched-place-strip">
-                <span>{parsed.matchedPlace.area}</span>
-                <strong>{parsed.matchedPlace.heroDish}</strong>
-              </div>
-              <div className="tag-row">
-                {parsed.matchedPlace.cuisines.map((cuisine) => (
-                  <span key={cuisine}>{cuisine}</span>
-                ))}
-              </div>
-            </>
-          )}
-          {parsed?.url && !parsed.matchedPlace && (
-            <div className="matched-place-strip pending-strip">
-              <span>Queued for automatic detection</span>
-              <strong>{parsed.source} link</strong>
-            </div>
-          )}
+          <ButtonLink className="w-full" href="/map" variant="outline">
+            <MapPinned />
+            See my map
+          </ButtonLink>
         </aside>
       </section>
 
-      <section className="saved-list" aria-label="Saved places">
+      <section className="saved-list" aria-label="Saved Instagram Reels">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Saved</p>
-            <h2>Local saved recommendations</h2>
-            <p className="hint">Matched places show as pins. Plain Reel links auto-resolve.</p>
+            <p className="eyebrow">Your saved Reels</p>
+            <h2>Do not lose a good food find again.</h2>
           </div>
-          {latestSave && <p className="hint">Latest: {latestSave.placeName}</p>}
+          <p className="hint">{saves.length} saved</p>
         </div>
         <div className="places-grid">
           {saves.map((save) => (
             <article className="place-card" key={save.id}>
               <div>
-                <p className="place-area">{save.area}</p>
-                <h2>{save.placeName}</h2>
-                <p className="place-address">{save.rawInput}</p>
+                <p className="place-area">Instagram Reel</p>
+                <h2>Saved food find</h2>
+                <p className="place-address">{save.sourceUrl}</p>
               </div>
-              <div className="place-meta">
-                <span>
-                  {save.resolutionStatus === "pending" || save.resolutionStatus === "review"
-                    ? "Auto resolving"
-                    : `${Math.round(save.confidence * 100)}% match`}
-                </span>
-                <span>
-                  {save.resolutionStatus === "pending"
-                    ? "Needs restaurant detection"
-                    : save.resolutionStatus === "review"
-                      ? "Needs place verification"
-                      : "Matched restaurant"}
-                </span>
-              </div>
-              {save.resolverNote && <p className="hint">{save.resolverNote}</p>}
-              <div className="tag-row">
-                <span>{save.source}</span>
-                {save.creatorHandle && <span>@{save.creatorHandle}</span>}
-              </div>
+              <p className="hint">Saved {new Date(save.createdAt).toLocaleString("en-IN")}</p>
               <div className="card-footer-row">
-                <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
-                <div className="inline-actions">
-                  <Link className="text-button" href="/map">
-                    View in Map
-                  </Link>
-                  <button className="text-button" type="button" onClick={() => removeSave(save.id)}>
-                    Remove
-                  </button>
-                </div>
+                <a className="text-button" href={save.sourceUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink />
+                  Open Reel
+                </a>
+                <Button
+                  disabled={removingId === save.id}
+                  onClick={() => void removeSave(save.id)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 />
+                  Remove
+                </Button>
               </div>
             </article>
           ))}
           {saves.length === 0 && (
             <article className="place-card">
               <div>
-                <p className="place-area">Empty</p>
-                <h2>No saves yet</h2>
-                <p className="place-address">
-                  Parse a sample or paste a creator recommendation to create your first local save.
-                </p>
+                <p className="place-area">Your map is empty</p>
+                <h2>Paste your first Reel above.</h2>
+                <p className="place-address">That is all this first version asks you to do.</p>
               </div>
             </article>
           )}

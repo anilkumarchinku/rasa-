@@ -1,42 +1,17 @@
 "use client";
 
-import {
-  getSeedPlaceById,
-  savedPlacesStorageKey,
-  type InstagramResolverResult,
-  type SavedPlaceRecord,
-} from "@rasa/shared";
-
-const cloudDeviceStorageKey = "rasa.cloud.device-id";
-const resolverRetryTimeoutMs = 25000;
+import { savedPlacesStorageKey, type SavedPlaceRecord } from "@rasa/shared";
 
 type CloudSaveResponse = {
   mode: "local" | "supabase";
-  saves: SavedPlaceRecord[];
+  save?: SavedPlaceRecord;
+  saves?: SavedPlaceRecord[];
 };
-
-function createDeviceId() {
-  return `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-export function getCloudDeviceId() {
-  const existing = window.localStorage.getItem(cloudDeviceStorageKey);
-
-  if (existing) {
-    return existing;
-  }
-
-  const nextId = createDeviceId();
-  window.localStorage.setItem(cloudDeviceStorageKey, nextId);
-  return nextId;
-}
 
 export function readLocalSaves() {
   const stored = window.localStorage.getItem(savedPlacesStorageKey);
 
-  if (!stored) {
-    return [];
-  }
+  if (!stored) return [];
 
   try {
     return JSON.parse(stored) as SavedPlaceRecord[];
@@ -70,25 +45,19 @@ export async function loadSavedRecords() {
   const localSaves = readLocalSaves();
 
   try {
-    const response = await fetch("/api/saves", {
-      headers: {
-        "x-rasa-device-id": getCloudDeviceId(),
-      },
-    });
+    const response = await fetch("/api/saves", { cache: "no-store" });
 
-    if (!response.ok) {
-      return { mode: "local" as const, saves: localSaves };
-    }
+    if (!response.ok) return { mode: "local" as const, saves: localSaves };
 
     const payload = (await response.json()) as CloudSaveResponse;
 
-    if (payload.mode !== "supabase") {
+    if (payload.mode !== "supabase" || !payload.saves) {
       return { mode: "local" as const, saves: localSaves };
     }
 
-    const mergedSaves = mergeSavedRecords(payload.saves, localSaves);
-    writeLocalSaves(mergedSaves);
-    return { mode: "supabase" as const, saves: mergedSaves };
+    const saves = mergeSavedRecords(payload.saves, localSaves);
+    writeLocalSaves(saves);
+    return { mode: "supabase" as const, saves };
   } catch {
     return { mode: "local" as const, saves: localSaves };
   }
@@ -96,99 +65,35 @@ export async function loadSavedRecords() {
 
 export async function syncSavedRecord(save: SavedPlaceRecord) {
   try {
-    await fetch("/api/saves", {
+    const response = await fetch("/api/saves", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-rasa-device-id": getCloudDeviceId(),
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ save }),
     });
+
+    if (!response.ok) return { mode: "local" as const, save };
+
+    const payload = (await response.json()) as CloudSaveResponse;
+    return { mode: payload.mode, save: payload.save ?? save };
   } catch {
-    // Local saves remain the source of truth until cloud sync is available.
+    return { mode: "local" as const, save };
   }
 }
 
-export function saveFromResolverResult(
-  save: SavedPlaceRecord,
-  result: InstagramResolverResult,
-): SavedPlaceRecord {
-  if (result.status === "resolved" && result.place) {
-    return {
-      ...save,
-      area: result.place.area,
-      confidence: result.confidence,
-      creatorHandle: result.creatorHandle ?? save.creatorHandle,
-      placeId: result.place.id,
-      placeName: result.place.name,
-      resolutionStatus: "matched",
-      resolvedAt: new Date().toISOString(),
-      resolverNote: result.note,
-    };
+export async function deleteSavedRecord(id: string) {
+  try {
+    const response = await fetch(`/api/saves?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    return response.ok;
+  } catch {
+    return false;
   }
-
-  return {
-    ...save,
-    area: result.extractedArea ?? save.area,
-    confidence: result.confidence,
-    creatorHandle: result.creatorHandle ?? save.creatorHandle,
-    placeName: result.extractedPlaceName ?? save.placeName,
-    resolutionStatus: result.status === "review" ? "review" : "pending",
-    resolverNote: result.note,
-  };
-}
-
-export async function retryPendingSavedRecords(saves: SavedPlaceRecord[]) {
-  const nextSaves = await Promise.all(
-    saves.map(async (save) => {
-      const hasMapPin = Boolean(getSeedPlaceById(save.placeId));
-
-      if (hasMapPin || save.source !== "instagram" || !save.sourceUrl) {
-        return save;
-      }
-
-      try {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), resolverRetryTimeoutMs);
-        const response = await fetch(
-          "/api/instagram/resolve",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: save.sourceUrl }),
-            signal: controller.signal,
-          },
-        ).finally(() => window.clearTimeout(timeout));
-
-        if (!response.ok) {
-          return save;
-        }
-
-        const result = (await response.json()) as InstagramResolverResult;
-        const updatedSave = saveFromResolverResult(save, result);
-        await syncSavedRecord(updatedSave);
-        return updatedSave;
-      } catch {
-        return save;
-      }
-    }),
-  );
-
-  writeLocalSaves(nextSaves);
-  return nextSaves;
 }
 
 export async function clearSavedRecords() {
-  window.localStorage.removeItem(savedPlacesStorageKey);
-
   try {
-    await fetch("/api/saves", {
-      method: "DELETE",
-      headers: {
-        "x-rasa-device-id": getCloudDeviceId(),
-      },
-    });
+    const response = await fetch("/api/saves", { method: "DELETE" });
+    return response.ok;
   } catch {
-    // Clearing local state should not depend on cloud availability.
+    return false;
   }
 }

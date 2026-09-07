@@ -1,5 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { SavedPlaceRecord } from "@rasa/shared";
+import {
+  anonymousSessionCookieName,
+  getAnonymousSession,
+  type AnonymousSession,
+} from "@/lib/anonymous-session";
+import { normalizeInstagramReelUrl } from "@/lib/instagram-url";
+
+export const dynamic = "force-dynamic";
+
+const maxSavesPerSession = 100;
 
 type SaveRequest = {
   save?: SavedPlaceRecord;
@@ -25,35 +35,22 @@ function supabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !key) {
-    return null;
+  return url && key ? { key, url } : null;
+}
+
+function supabaseFetch(
+  config: NonNullable<ReturnType<typeof supabaseConfig>>,
+  path: string,
+  init: RequestInit = {},
+) {
+  const headers = new Headers(init.headers);
+  headers.set("apikey", config.key);
+
+  if (!config.key.startsWith("sb_")) {
+    headers.set("Authorization", `Bearer ${config.key}`);
   }
 
-  return { key, url };
-}
-
-function userKeyFromRequest(request: Request) {
-  return request.headers.get("x-rasa-device-id")?.trim() || "demo-browser";
-}
-
-function rowFromSave(save: SavedPlaceRecord, userKey: string) {
-  return {
-    id: save.id,
-    user_key: userKey,
-    place_id: save.placeId,
-    place_name: save.placeName,
-    area: save.area,
-    source: save.source,
-    source_url: save.sourceUrl ?? null,
-    creator_handle: save.creatorHandle ?? null,
-    raw_input: save.rawInput,
-    confidence: save.confidence,
-    resolution_status: save.resolutionStatus ?? null,
-    resolver_note: save.resolverNote ?? null,
-    resolved_at: save.resolvedAt ?? null,
-    created_at: save.createdAt,
-    updated_at: new Date().toISOString(),
-  };
+  return fetch(`${config.url}/rest/v1/${path}`, { ...init, headers });
 }
 
 function saveFromRow(row: SavedPlaceRow): SavedPlaceRecord {
@@ -74,126 +71,182 @@ function saveFromRow(row: SavedPlaceRow): SavedPlaceRecord {
   };
 }
 
-async function supabaseFetch(path: string, init: RequestInit = {}) {
-  const config = supabaseConfig();
+function responseWithSession(body: unknown, session: AnonymousSession | null, init?: ResponseInit) {
+  const response = NextResponse.json(body, init);
 
-  if (!config) {
-    return null;
-  }
-
-  const isOpaqueApiKey = config.key.startsWith("sb_");
-  const headers = new Headers(init.headers);
-  headers.set("apikey", config.key);
-
-  if (!isOpaqueApiKey) {
-    headers.set("Authorization", `Bearer ${config.key}`);
-  }
-
-  return fetch(`${config.url}/rest/v1/${path}`, {
-    ...init,
-    headers,
-  });
-}
-
-async function supabaseError(response: Response) {
-  const text = await response.text();
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text || response.statusText;
-  }
-}
-
-export async function GET(request: Request) {
-  const userKey = userKeyFromRequest(request);
-  const response = await supabaseFetch(
-    `saved_places?select=*&user_key=eq.${encodeURIComponent(userKey)}&order=created_at.desc`,
-  );
-
-  if (!response) {
-    return NextResponse.json({ mode: "local", saves: [] });
-  }
-
-  if (!response.ok) {
-    return NextResponse.json(
-      {
-        mode: "local",
-        error: "Supabase read failed.",
-        detail: await supabaseError(response),
-        saves: [],
-      },
-      { status: 200 },
-    );
-  }
-
-  const rows = (await response.json()) as SavedPlaceRow[];
-
-  return NextResponse.json({
-    mode: "supabase",
-    saves: rows.map(saveFromRow),
-  });
-}
-
-export async function POST(request: Request) {
-  const userKey = userKeyFromRequest(request);
-  const body = (await request.json()) as SaveRequest;
-
-  if (!body.save) {
-    return NextResponse.json({ error: "Missing save payload." }, { status: 400 });
-  }
-
-  const response = await supabaseFetch("saved_places?on_conflict=id", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=representation",
-    },
-    body: JSON.stringify(rowFromSave(body.save, userKey)),
-  });
-
-  if (!response) {
-    return NextResponse.json({ mode: "local", save: body.save });
-  }
-
-  if (!response.ok) {
-    return NextResponse.json(
-      {
-        mode: "local",
-        error: "Supabase save failed.",
-        detail: await supabaseError(response),
-        save: body.save,
-      },
-      { status: 200 },
-    );
-  }
-
-  const rows = (await response.json()) as SavedPlaceRow[];
-
-  return NextResponse.json({
-    mode: "supabase",
-    save: rows[0] ? saveFromRow(rows[0]) : body.save,
-  });
-}
-
-export async function DELETE(request: Request) {
-  const userKey = userKeyFromRequest(request);
-  const response = await supabaseFetch(`saved_places?user_key=eq.${encodeURIComponent(userKey)}`, {
-    method: "DELETE",
-  });
-
-  if (!response) {
-    return NextResponse.json({ mode: "local", cleared: true });
-  }
-
-  if (!response.ok) {
-    return NextResponse.json({
-      mode: "local",
-      cleared: true,
-      error: "Supabase clear failed.",
-      detail: await supabaseError(response),
+  if (session?.shouldSetCookie) {
+    response.cookies.set({
+      name: anonymousSessionCookieName,
+      value: session.cookieValue,
+      httpOnly: true,
+      maxAge: 60 * 60 * 24 * 365,
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
   }
 
-  return NextResponse.json({ mode: "supabase", cleared: true });
+  return response;
+}
+
+function getSession(request: NextRequest, config: NonNullable<ReturnType<typeof supabaseConfig>>) {
+  return getAnonymousSession(
+    request.cookies.get(anonymousSessionCookieName)?.value,
+    process.env.RASA_SESSION_SECRET ?? config.key,
+  );
+}
+
+function isClientSave(value: unknown): value is SavedPlaceRecord {
+  if (!value || typeof value !== "object") return false;
+
+  const save = value as Partial<SavedPlaceRecord>;
+  return (
+    typeof save.id === "string" &&
+    /^save-[A-Za-z0-9_-]{8,128}$/.test(save.id) &&
+    typeof save.sourceUrl === "string" &&
+    save.sourceUrl.length <= 2048
+  );
+}
+
+function rowFromSave(save: SavedPlaceRecord, userKey: string) {
+  const sourceUrl = normalizeInstagramReelUrl(save.sourceUrl ?? "");
+
+  if (!sourceUrl) return null;
+
+  const createdAt = new Date().toISOString();
+
+  return {
+    id: save.id,
+    user_key: userKey,
+    place_id: `saved-reel-${save.id}`,
+    place_name: "Instagram Reel",
+    area: "Saved Reel",
+    source: "instagram",
+    source_url: sourceUrl,
+    creator_handle: null,
+    raw_input: sourceUrl,
+    confidence: 0,
+    resolution_status: "pending",
+    resolver_note: "Saved to your Rasa Map.",
+    resolved_at: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+}
+
+async function readSave(
+  config: NonNullable<ReturnType<typeof supabaseConfig>>,
+  userKey: string,
+  id: string,
+) {
+  const response = await supabaseFetch(
+    config,
+    `saved_places?select=*&id=eq.${encodeURIComponent(id)}&user_key=eq.${encodeURIComponent(userKey)}`,
+  );
+
+  if (!response.ok) return null;
+  const rows = (await response.json()) as SavedPlaceRow[];
+  return rows[0] ? saveFromRow(rows[0]) : null;
+}
+
+export async function GET(request: NextRequest) {
+  const config = supabaseConfig();
+
+  if (!config) {
+    return NextResponse.json({ mode: "local", saves: [] });
+  }
+
+  const session = getSession(request, config);
+  const response = await supabaseFetch(
+    config,
+    `saved_places?select=*&user_key=eq.${encodeURIComponent(session.userKey)}&order=created_at.desc&limit=${maxSavesPerSession}`,
+  );
+
+  if (!response.ok) {
+    return responseWithSession({ error: "Could not load saved Reels." }, session, { status: 503 });
+  }
+
+  const rows = (await response.json()) as SavedPlaceRow[];
+  return responseWithSession({ mode: "supabase", saves: rows.map(saveFromRow) }, session);
+}
+
+export async function POST(request: NextRequest) {
+  let body: SaveRequest;
+
+  try {
+    body = (await request.json()) as SaveRequest;
+  } catch {
+    return NextResponse.json({ error: "Invalid save payload." }, { status: 400 });
+  }
+
+  if (!isClientSave(body.save)) {
+    return NextResponse.json({ error: "Paste a valid Instagram Reel link." }, { status: 400 });
+  }
+
+  const sourceUrl = body.save?.sourceUrl;
+
+  if (!sourceUrl || !normalizeInstagramReelUrl(sourceUrl)) {
+    return NextResponse.json({ error: "Paste a valid Instagram Reel link." }, { status: 400 });
+  }
+
+  const config = supabaseConfig();
+
+  if (!config) {
+    return NextResponse.json({ mode: "local" });
+  }
+
+  const session = getSession(request, config);
+  const row = rowFromSave(body.save, session.userKey);
+
+  if (!row) {
+    return responseWithSession({ error: "Paste a valid Instagram Reel link." }, session, {
+      status: 400,
+    });
+  }
+
+  const existing = await readSave(config, session.userKey, row.id);
+
+  if (existing) {
+    return responseWithSession({ mode: "supabase", save: existing }, session);
+  }
+
+  const response = await supabaseFetch(config, "saved_places", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(row),
+  });
+
+  if (!response.ok) {
+    return responseWithSession({ error: "Could not save this Reel." }, session, { status: 503 });
+  }
+
+  const rows = (await response.json()) as SavedPlaceRow[];
+  return responseWithSession(
+    { mode: "supabase", save: rows[0] ? saveFromRow(rows[0]) : body.save },
+    session,
+  );
+}
+
+export async function DELETE(request: NextRequest) {
+  const config = supabaseConfig();
+
+  if (!config) {
+    return NextResponse.json({ mode: "local", cleared: true });
+  }
+
+  const session = getSession(request, config);
+  const id = new URL(request.url).searchParams.get("id");
+  const target = id
+    ? `saved_places?id=eq.${encodeURIComponent(id)}&user_key=eq.${encodeURIComponent(session.userKey)}`
+    : `saved_places?user_key=eq.${encodeURIComponent(session.userKey)}`;
+  const response = await supabaseFetch(config, target, { method: "DELETE" });
+
+  if (!response.ok) {
+    return responseWithSession({ error: "Could not remove saved Reel." }, session, { status: 503 });
+  }
+
+  return responseWithSession({ mode: "supabase", cleared: true }, session);
 }

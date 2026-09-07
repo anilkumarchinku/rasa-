@@ -1,25 +1,13 @@
 "use client";
 
-import {
-  getSeedPlaceById,
-  hyderabadSeedPlaces,
-  type PhaseZeroCuisine,
-  type SavedPlaceRecord,
-  type SaveSource,
-} from "@rasa/shared";
+import { getSeedPlaceById, type SavedPlaceRecord } from "@rasa/shared";
+import { ExternalLink, MapPinned, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { loadSavedRecords, retryPendingSavedRecords } from "../lib/save-sync";
-import { getPlaceImage, getRouteImage, VisualImage } from "./visual-image";
+import { deleteSavedRecord, loadSavedRecords, writeLocalSaves } from "../lib/save-sync";
+import { Button, ButtonLink } from "./ui/button";
 
-type FilterValue = "all";
-
-type EnrichedSave = SavedPlaceRecord & {
-  place: NonNullable<ReturnType<typeof getSeedPlaceById>>;
-};
-
-const hyderabadStaticMapUrl =
-  "/images/hyderabad-static-map.svg";
+const hyderabadStaticMapUrl = "/images/hyderabad-static-map.svg";
 
 const mapBounds = {
   minLat: 17.34,
@@ -27,8 +15,6 @@ const mapBounds = {
   minLng: 78.38,
   maxLng: 78.51,
 };
-
-const saturdayReminderStorageKey = "rasa.reminders.saturday-saved-spots";
 
 function getPinPosition(latitude: number, longitude: number) {
   const x = ((longitude - mapBounds.minLng) / (mapBounds.maxLng - mapBounds.minLng)) * 100;
@@ -40,563 +26,213 @@ function getPinPosition(latitude: number, longitude: number) {
   };
 }
 
-function uniqueValues<T extends string>(values: T[]) {
-  return Array.from(new Set(values));
-}
-
-function getGoogleMapsUrl(place: EnrichedSave["place"]) {
-  const query = encodeURIComponent(`${place.name}, ${place.address}`);
-  return `https://www.google.com/maps/search/?api=1&query=${query}`;
-}
-
 export function PersonalMap() {
   const [saves, setSaves] = useState<SavedPlaceRecord[]>([]);
-  const [saturdayReminderEnabled, setSaturdayReminderEnabled] = useState(true);
-  const [activeArea, setActiveArea] = useState<string | FilterValue>("all");
-  const [activeSource, setActiveSource] = useState<SaveSource | FilterValue>("all");
-  const [activeCuisine, setActiveCuisine] = useState<PhaseZeroCuisine | FilterValue>("all");
-  const [selectedSaveId, setSelectedSaveId] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState<"local" | "supabase">("local");
-  const [resolverStatus, setResolverStatus] = useState(
-    "Resolver checks pending links on page load.",
-  );
+  const [selectedSaveId, setSelectedSaveId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     void loadSavedRecords().then(({ mode, saves: loadedSaves }) => {
       setSyncMode(mode);
       setSaves(loadedSaves);
-
-      if (loadedSaves.some((save) => save.resolutionStatus === "pending")) {
-        setResolverStatus("Resolver retry running for pending links...");
-        void retryPendingSavedRecords(loadedSaves).then((resolvedSaves) => {
-          setSaves(resolvedSaves);
-          setResolverStatus("Resolver retry finished. Pins appear only after place verification.");
-        });
-      }
     });
-    const storedReminder = window.localStorage.getItem(saturdayReminderStorageKey);
-    setSaturdayReminderEnabled(storedReminder ? storedReminder === "enabled" : true);
   }, []);
 
-  const enrichedSaves = useMemo(
+  const selectedSave = saves.find((save) => save.id === selectedSaveId) ?? saves[0];
+  const mappedSaves = useMemo(
     () =>
       saves
-        .map((save) => {
-          const place = getSeedPlaceById(save.placeId);
-
-          if (!place) {
-            return null;
-          }
-
-          return { ...save, place };
-        })
-        .filter((save): save is EnrichedSave => Boolean(save)),
+        .map((save) => ({ place: getSeedPlaceById(save.placeId), save }))
+        .filter(
+          (
+            value,
+          ): value is {
+            place: NonNullable<ReturnType<typeof getSeedPlaceById>>;
+            save: SavedPlaceRecord;
+          } => Boolean(value.place),
+        ),
     [saves],
   );
 
-  const pendingSaves = useMemo(
-    () =>
-      saves.filter(
-        (save) => save.resolutionStatus === "pending" || !getSeedPlaceById(save.placeId),
-      ),
-    [saves],
-  );
+  async function removeSave(id: string) {
+    setRemovingId(id);
+    const removed = await deleteSavedRecord(id);
 
-  const filterOptions = useMemo(
-    () => ({
-      areas: uniqueValues(enrichedSaves.map((save) => save.place.area)),
-      sources: uniqueValues(enrichedSaves.map((save) => save.source)),
-      cuisines: uniqueValues(enrichedSaves.flatMap((save) => [...save.place.cuisines])),
-    }),
-    [enrichedSaves],
-  );
+    if (removed || syncMode === "local") {
+      const nextSaves = saves.filter((save) => save.id !== id);
+      writeLocalSaves(nextSaves);
+      setSaves(nextSaves);
+      setSelectedSaveId(null);
+    } else {
+      setMessage("Could not remove this saved Reel. Please try again.");
+    }
 
-  const filteredSaves = enrichedSaves.filter((save) => {
-    const areaMatch = activeArea === "all" || save.place.area === activeArea;
-    const sourceMatch = activeSource === "all" || save.source === activeSource;
-    const cuisineMatch =
-      activeCuisine === "all" || save.place.cuisines.some((cuisine) => cuisine === activeCuisine);
-
-    return areaMatch && sourceMatch && cuisineMatch;
-  });
-
-  const selectedSave = filteredSaves.find((save) => save.id === selectedSaveId) ?? filteredSaves[0];
-
-  function resetFilters() {
-    setActiveArea("all");
-    setActiveSource("all");
-    setActiveCuisine("all");
-    setSelectedSaveId(null);
-  }
-
-  function toggleSaturdayReminder() {
-    const nextValue = !saturdayReminderEnabled;
-    setSaturdayReminderEnabled(nextValue);
-    window.localStorage.setItem(saturdayReminderStorageKey, nextValue ? "enabled" : "disabled");
-  }
-
-  async function runResolverNow() {
-    setResolverStatus("Resolver retry running for pending links...");
-    const resolvedSaves = await retryPendingSavedRecords(saves);
-    setSaves(resolvedSaves);
-    setResolverStatus("Resolver retry finished. Unverified links stay in the saved list.");
+    setRemovingId(null);
   }
 
   return (
     <main className="map-shell">
-      <nav className="topbar" aria-label="Rasa navigation">
-        <Link className="brand-lockup" href="/">
-          <span className="brand-mark">R</span>
-          <span>Rasa</span>
-        </Link>
-        <div className="nav-links">
-          <Link href="/save">Save</Link>
-          <Link href="/map">Map</Link>
-          <Link href="/places">Places</Link>
-        </div>
-      </nav>
-
       <section className="map-hero">
         <div>
-          <p className="eyebrow">Phase 0.6</p>
-          <h1>Your saved Hyderabad, finally visible.</h1>
+          <p className="eyebrow">Your Rasa Map</p>
+          <h1>Every Reel you meant to remember.</h1>
           <p className="lede">
-            A lightweight personal map image for the places you saved from creator
-            recommendations. Once Rasa identifies the restaurant, the pin appears here and opens
-            Google Maps.
+            This is your private saved-Reel map. Rasa keeps the original Instagram link ready for
+            your next plan, without guessing a restaurant location.
           </p>
         </div>
-        <div className="hero-media-stack">
-          <div className="visual-card">
-            <VisualImage
-              alt="Personal map discovery preview"
-              className="responsive-visual"
-              priority
-              src={getRouteImage("map")}
-            />
+        <div className="metric-row">
+          <div>
+            <span>Saved Reels</span>
+            <strong>{saves.length}</strong>
           </div>
-          <div className="metric-row">
-            <div>
-              <span>Saved</span>
-              <strong>{saves.length}</strong>
-            </div>
-            <div>
-              <span>Mapped</span>
-              <strong>{filteredSaves.length}</strong>
-            </div>
-            <div>
-              <span>Auto resolving</span>
-              <strong>{pendingSaves.length}</strong>
-            </div>
-            <div>
-              <span>Sync</span>
-              <strong>{syncMode === "supabase" ? "Cloud" : "Local"}</strong>
-            </div>
+          <div>
+            <span>Exact locations</span>
+            <strong>{mappedSaves.length}</strong>
           </div>
-        </div>
-      </section>
-
-      <section className="saved-list reminder-card" aria-label="Saturday saved spots reminder">
-        <div>
-          <p className="eyebrow">Saturday reminder</p>
-          <h2>Hey, which spot are we reaching today?</h2>
-          <p className="hint">
-            Every Saturday, Rasa should remind the user to open this personal list and pick from
-            saved spots.
-          </p>
-        </div>
-        <div className="reminder-actions">
-          <span>{saturdayReminderEnabled ? "Reminder on" : "Reminder off"}</span>
-          <button className="secondary-button" type="button" onClick={toggleSaturdayReminder}>
-            {saturdayReminderEnabled ? "Turn off" : "Turn on"}
-          </button>
+          <div>
+            <span>Storage</span>
+            <strong>{syncMode === "supabase" ? "Cloud" : "This device"}</strong>
+          </div>
         </div>
       </section>
 
       <section className="map-workspace">
-        <aside className="map-controls">
-          <div className="panel-heading">
-            <p className="eyebrow">Filters</p>
-            <h2>Find the right saved place</h2>
-            <p>Filter by area, source, or cuisine. The cards and pins stay in sync.</p>
-          </div>
-
-          <label>
-            Area
-            <select value={activeArea} onChange={(event) => setActiveArea(event.target.value)}>
-              <option value="all">All areas</option>
-              {filterOptions.areas.map((area) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Source
-            <select
-              value={activeSource}
-              onChange={(event) => setActiveSource(event.target.value as SaveSource | FilterValue)}
-            >
-              <option value="all">All sources</option>
-              {filterOptions.sources.map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Cuisine
-            <select
-              value={activeCuisine}
-              onChange={(event) =>
-                setActiveCuisine(event.target.value as PhaseZeroCuisine | FilterValue)
-              }
-            >
-              <option value="all">All cuisines</option>
-              {filterOptions.cuisines.map((cuisine) => (
-                <option key={cuisine} value={cuisine}>
-                  {cuisine}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button type="button" className="secondary-button" onClick={resetFilters}>
-            Reset filters
-          </button>
-        </aside>
-
-        <section className="map-canvas-panel" aria-label="Saved places map">
+        <section className="map-canvas-panel" aria-label="Rasa saved Reels map">
           <div className="map-canvas">
             <div
-              aria-label="Static Hyderabad map"
+              aria-label="Hyderabad map background"
               className="static-hyd-map"
               role="img"
               style={{ backgroundImage: `url(${hyderabadStaticMapUrl})` }}
             />
             <div className="map-grid-lines" />
-            <span className="map-zone zone-west">Tolichowki</span>
-            <span className="map-zone zone-central">Central</span>
-            <span className="map-zone zone-east">Banjara/Jubilee</span>
-
-            {hyderabadSeedPlaces.map((place) => {
-              const position = getPinPosition(place.latitude, place.longitude);
-
-              const matchingSave = filteredSaves.find((save) => save.placeId === place.id);
-
-              return matchingSave ? (
-                <a
-                  aria-label={`Open ${place.name} in Google Maps`}
-                  className="map-pin saved-pin"
-                  href={getGoogleMapsUrl(place)}
-                  key={place.id}
-                  rel="noreferrer"
-                  style={position}
-                  target="_blank"
-                  onClick={() => setSelectedSaveId(matchingSave.id)}
-                >
-                  <span>S</span>
-                </a>
-              ) : (
-                <button
-                  aria-label={place.name}
-                  className="map-pin seed-pin"
-                  key={place.id}
-                  style={position}
-                  type="button"
-                  onClick={() => setSelectedSaveId(null)}
-                >
-                  <span />
-                </button>
-              );
-            })}
-
-            {filteredSaves.length === 0 && pendingSaves.length > 0 && (
-              <div className="map-empty-overlay">
-                <strong>No exact restaurant location yet</strong>
-                <span>
-                  Your Reel links are saved below. They become map pins only after Rasa identifies
-                  the restaurant.
-                </span>
+            <div className="saved-reel-map-summary">
+              <MapPinned aria-hidden="true" />
+              <div>
+                <span>Private saved Reels</span>
+                <strong>{saves.length} ready for your next plan</strong>
               </div>
-            )}
+            </div>
+            {mappedSaves.map(({ place, save }) => (
+              <button
+                aria-label={`Show ${place.name}`}
+                className="map-pin saved-pin"
+                key={save.id}
+                onClick={() => setSelectedSaveId(save.id)}
+                style={getPinPosition(place.latitude, place.longitude)}
+                type="button"
+              >
+                <span>S</span>
+              </button>
+            ))}
           </div>
           <div className="map-legend">
             <span>
-              <i className="legend-dot saved" /> Saved
+              <i className="legend-dot saved" /> Exact location saved
             </span>
             <span>
-              <i className="legend-dot seed" /> Seed place
+              {saves.length} Reel{saves.length === 1 ? "" : "s"} in your map
             </span>
           </div>
-          {pendingSaves.length > 0 && (
-            <div className="map-pending-tray" aria-label="Saved links waiting for location">
-              <div>
-                <p className="eyebrow">Saved, not mapped yet</p>
-                <h3>{pendingSaves.length} Reel link{pendingSaves.length === 1 ? "" : "s"} waiting for location</h3>
-              </div>
-              <div className="map-pending-list">
-                {pendingSaves.slice(0, 4).map((save) => (
-                  <article key={save.id}>
-                    <strong>{save.placeName}</strong>
-                    <span>{save.sourceUrl ?? save.rawInput}</span>
-                  </article>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
         <aside className="selected-place-panel">
           {selectedSave ? (
             <>
-              <VisualImage
-                alt={`${selectedSave.place.name} selected map place`}
-                className="card-visual"
-                src={getPlaceImage(selectedSave.place.id)}
-              />
               <div className="panel-heading">
-                <p className="eyebrow">{selectedSave.place.area}</p>
-                <h2>{selectedSave.place.name}</h2>
-                <p>{selectedSave.place.address}</p>
+                <p className="eyebrow">Saved Instagram Reel</p>
+                <h2>Your food find is safe here.</h2>
+                <p>{selectedSave.sourceUrl}</p>
               </div>
-              <div className="matched-place-strip">
-                <span>Saved from {selectedSave.source}</span>
-                <strong>{selectedSave.place.heroDish}</strong>
-              </div>
-              <div className="tag-row">
-                {selectedSave.place.cuisines.map((cuisine) => (
-                  <span key={cuisine}>{cuisine}</span>
-                ))}
-              </div>
-              <a
-                className="maps-link"
-                href={getGoogleMapsUrl(selectedSave.place)}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Open in Google Maps
-              </a>
               <div className="summary-list">
-                <div>
-                  <span>Creator</span>
-                  <strong>
-                    {selectedSave.creatorHandle ? `@${selectedSave.creatorHandle}` : "Not detected"}
-                  </strong>
-                </div>
                 <div>
                   <span>Saved</span>
                   <strong>{new Date(selectedSave.createdAt).toLocaleString("en-IN")}</strong>
                 </div>
+                <div>
+                  <span>Location</span>
+                  <strong>Not guessed</strong>
+                </div>
               </div>
+              <a
+                className="maps-link"
+                href={selectedSave.sourceUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ExternalLink />
+                Open Instagram Reel
+              </a>
+              <Button
+                className="w-full"
+                disabled={removingId === selectedSave.id}
+                onClick={() => void removeSave(selectedSave.id)}
+                variant="outline"
+              >
+                <Trash2 />
+                Remove from map
+              </Button>
             </>
           ) : (
             <div className="panel-heading">
-              <p className="eyebrow">{pendingSaves.length ? "Resolving" : "Empty"}</p>
-              <h2>
-                {pendingSaves.length ? "Reel links are being identified" : "No saved places yet"}
-              </h2>
-              <p>
-                {pendingSaves.length
-                  ? "Plain Instagram links appear below until Rasa identifies the restaurant and adds a map pin."
-                  : "Save a place first, then come back to see it on your personal map."}
-              </p>
-              <Link className="text-link" href="/save">
-                Save a place
-              </Link>
-              {pendingSaves.length > 0 && (
-                <div className="visible-pending-list">
-                  {pendingSaves.slice(0, 3).map((save) => (
-                    <div className="visible-pending-item" key={save.id}>
-                      <span>Saved link</span>
-                      <strong>{save.placeName}</strong>
-                      <small>{save.sourceUrl ?? save.rawInput}</small>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <p className="eyebrow">Nothing saved yet</p>
+              <h2>Your next food plan starts with a Reel.</h2>
+              <p>Paste an Instagram Reel link and it will appear here immediately.</p>
+              <ButtonLink href="/save">
+                <MapPinned />
+                Save a Reel
+              </ButtonLink>
             </div>
           )}
         </aside>
       </section>
 
-      {pendingSaves.length > 0 && (
-        <section className="saved-list resolver-inbox" aria-label="Auto resolving Reel links">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Auto resolver</p>
-              <h2>Reel links saved, not mapped yet</h2>
-              <p className="hint">{resolverStatus}</p>
-            </div>
-            <div className="resolver-actions">
-              <p className="hint">{pendingSaves.length} resolving</p>
-              <button className="secondary-button" type="button" onClick={runResolverNow}>
-                Run resolver now
-              </button>
-            </div>
-          </div>
-          <div className="places-grid">
-            {pendingSaves.map((save) => (
-              <article className="place-card resolver-card" key={save.id}>
-                <div>
-                  <p className="place-area">{save.area}</p>
-                  <h2>{save.placeName}</h2>
-                  <p className="place-address">{save.sourceUrl ?? save.rawInput}</p>
-                </div>
-                <div className="matched-place-strip pending-strip">
-                  <span>{save.confidence > 0.2 ? "Resolver checked" : "Needs more signal"}</span>
-                  <strong>
-                    {save.resolverNote ??
-                      "Saved instantly, but this Reel did not expose restaurant text yet."}
-                  </strong>
-                </div>
-                <div className="tag-row">
-                  <span>{save.source}</span>
-                  <span>{save.confidence > 0.2 ? "Checked" : "Queued"}</span>
-                </div>
-                <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
+      {message && <p className="error-text">{message}</p>}
 
-      <section className="saved-list" aria-label="Personal saved list">
+      <section className="saved-list" aria-label="All saved Instagram Reels">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Personal list</p>
-            <h2>Everything you saved</h2>
-            <p className="hint">
-              Use this before hangouts. Mapped pins open Google Maps; Reel links marked auto
-              resolving are still being identified.
-            </p>
+            <p className="eyebrow">Saved on your map</p>
+            <h2>Open a Reel when it is time to decide.</h2>
           </div>
-          <p className="hint">{saves.length} saved</p>
+          <Link className="text-link" href="/save">
+            Save another Reel
+          </Link>
         </div>
         <div className="places-grid">
-          {saves.map((save) => {
-            const place = getSeedPlaceById(save.placeId);
-            const isPending = save.resolutionStatus === "pending" || !place;
-
-            return (
-              <article
-                className={isPending ? "place-card resolver-card" : "place-card"}
-                key={save.id}
-              >
-                {place && (
-                  <VisualImage
-                    alt={`${place.name} personal saved spot`}
-                    className="card-visual"
-                    src={getPlaceImage(place.id)}
-                  />
-                )}
-                <div>
-                  <p className="place-area">{isPending ? "Auto resolving" : place.area}</p>
-                  <h2>{isPending ? save.placeName : place.name}</h2>
-                  <p className="place-address">{save.sourceUrl ?? save.rawInput}</p>
-                </div>
-                <div className={isPending ? "matched-place-strip pending-strip" : "place-meta"}>
-                  {isPending ? (
-                    <>
-                      <span>Automatic process</span>
-                      <strong>{save.resolverNote ?? "Finding restaurant from Reel link"}</strong>
-                    </>
-                  ) : (
-                    <>
-                      <span>{place.heroDish}</span>
-                      <span>{Math.round(save.confidence * 100)}% match</span>
-                    </>
-                  )}
-                </div>
-                <div className="tag-row">
-                  <span>{save.source}</span>
-                  <span>{isPending ? "Queued" : "Map pin ready"}</span>
-                  {save.creatorHandle && <span>@{save.creatorHandle}</span>}
-                </div>
-                {save.resolvedAt && (
-                  <p className="hint">
-                    Resolved {new Date(save.resolvedAt).toLocaleString("en-IN")}
-                  </p>
-                )}
-                {!isPending && (
-                  <a
-                    className="maps-link compact"
-                    href={getGoogleMapsUrl(place)}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open in Google Maps
-                  </a>
-                )}
-                <p className="coordinates">{new Date(save.createdAt).toLocaleString("en-IN")}</p>
-              </article>
-            );
-          })}
+          {saves.map((save) => (
+            <article className="place-card" key={save.id}>
+              <div>
+                <p className="place-area">Instagram Reel</p>
+                <h2>Saved food find</h2>
+                <p className="place-address">{save.sourceUrl}</p>
+              </div>
+              <p className="hint">Saved {new Date(save.createdAt).toLocaleString("en-IN")}</p>
+              <div className="card-footer-row">
+                <a className="text-button" href={save.sourceUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink />
+                  Open Reel
+                </a>
+                <Button
+                  onClick={() => setSelectedSaveId(save.id)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  View
+                </Button>
+              </div>
+            </article>
+          ))}
           {saves.length === 0 && (
             <article className="place-card">
               <div>
-                <p className="place-area">Empty</p>
-                <h2>No saved spots yet</h2>
-                <p className="place-address">
-                  Paste a Reel link on `/save`; it will appear here even while auto resolving.
-                </p>
-              </div>
-            </article>
-          )}
-        </div>
-      </section>
-
-      <section className="saved-list" aria-label="Mapped saved place cards">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Cards</p>
-            <h2>Map-ready saved spots</h2>
-            <p className="hint">Tap a card to highlight its pin on the map.</p>
-          </div>
-          <p className="hint">{filteredSaves.length} visible</p>
-        </div>
-        <div className="places-grid">
-          {filteredSaves.map((save) => (
-            <button
-              className={
-                save.id === selectedSave?.id
-                  ? "place-card map-place-card active"
-                  : "place-card map-place-card"
-              }
-              key={save.id}
-              type="button"
-              onClick={() => setSelectedSaveId(save.id)}
-            >
-              <VisualImage
-                alt={`${save.place.name} saved place`}
-                className="card-visual"
-                src={getPlaceImage(save.place.id)}
-              />
-              <div>
-                <p className="place-area">{save.place.area}</p>
-                <h2>{save.place.name}</h2>
-                <p className="place-address">{save.rawInput}</p>
-              </div>
-              <div className="place-meta">
-                <span>{save.place.heroDish}</span>
-                <span>{Math.round(save.confidence * 100)}% match</span>
-              </div>
-              <div className="tag-row">
-                <span>{save.source}</span>
-                {save.creatorHandle && <span>@{save.creatorHandle}</span>}
-              </div>
-            </button>
-          ))}
-          {filteredSaves.length === 0 && (
-            <article className="place-card">
-              <div>
-                <p className="place-area">No results</p>
-                <h2>Nothing matches these filters</h2>
-                <p className="place-address">Reset filters or save another place from `/save`.</p>
+                <p className="place-area">Your Rasa Map</p>
+                <h2>It is waiting for your first food Reel.</h2>
+                <p className="place-address">Paste the link. Rasa will keep it here.</p>
               </div>
             </article>
           )}

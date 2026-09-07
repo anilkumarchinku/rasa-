@@ -1117,6 +1117,45 @@ a.map-pin {
   line-height: 1.35;
 }
 
+.saved-reel-map-summary {
+  align-items: center;
+  background: rgba(25, 22, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: #ffffff;
+  display: flex;
+  gap: 10px;
+  left: 50%;
+  max-width: calc(100% - 32px);
+  padding: 14px 16px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+}
+
+.saved-reel-map-summary svg {
+  color: #f7b29f;
+  flex: 0 0 auto;
+  height: 20px;
+  width: 20px;
+}
+
+.saved-reel-map-summary div {
+  display: grid;
+  gap: 2px;
+}
+
+.saved-reel-map-summary span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.saved-reel-map-summary strong {
+  font-size: 14px;
+}
+
 .map-legend {
   display: flex;
   flex-wrap: wrap;

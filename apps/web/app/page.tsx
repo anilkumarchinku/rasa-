@@ -1,5 +1,5 @@
-import { OnboardingFlow } from "../components/onboarding-flow";
+import { UniversalSave } from "../components/universal-save";
 
 export default function HomePage() {
-  return <OnboardingFlow />;
+  return <UniversalSave />;
 }
