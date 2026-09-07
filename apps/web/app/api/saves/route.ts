@@ -1,75 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { SavedPlaceRecord } from "@rasa/shared";
 import {
   anonymousSessionCookieName,
   getAnonymousSession,
   type AnonymousSession,
-} from "@/lib/anonymous-session";
-import { normalizeInstagramReelUrl } from "@/lib/instagram-url";
+} from "@/server/anonymous-session";
+import { getSessionSigningSecret, getSupabaseAdminConfig } from "@/server/config";
+import { isSaveId, parseSavedReel } from "@/server/saved-reels/model";
+import { SavedReelsRepository } from "@/server/saved-reels/repository";
+import { SavedReelLimitError, SavedReelsService } from "@/server/saved-reels/service";
 
 export const dynamic = "force-dynamic";
 
-const maxSavesPerSession = 100;
-
 type SaveRequest = {
-  save?: SavedPlaceRecord;
+  save?: unknown;
 };
-
-type SavedPlaceRow = {
-  id: string;
-  place_id: string;
-  place_name: string;
-  area: string;
-  source: SavedPlaceRecord["source"];
-  source_url?: string | null;
-  creator_handle?: string | null;
-  raw_input: string;
-  confidence: number;
-  resolution_status?: SavedPlaceRecord["resolutionStatus"] | null;
-  resolver_note?: string | null;
-  resolved_at?: string | null;
-  created_at: string;
-};
-
-function supabaseConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  return url && key ? { key, url } : null;
-}
-
-function supabaseFetch(
-  config: NonNullable<ReturnType<typeof supabaseConfig>>,
-  path: string,
-  init: RequestInit = {},
-) {
-  const headers = new Headers(init.headers);
-  headers.set("apikey", config.key);
-
-  if (!config.key.startsWith("sb_")) {
-    headers.set("Authorization", `Bearer ${config.key}`);
-  }
-
-  return fetch(`${config.url}/rest/v1/${path}`, { ...init, headers });
-}
-
-function saveFromRow(row: SavedPlaceRow): SavedPlaceRecord {
-  return {
-    id: row.id,
-    placeId: row.place_id,
-    placeName: row.place_name,
-    area: row.area,
-    source: row.source,
-    sourceUrl: row.source_url ?? undefined,
-    creatorHandle: row.creator_handle ?? undefined,
-    rawInput: row.raw_input,
-    confidence: Number(row.confidence),
-    resolutionStatus: row.resolution_status ?? undefined,
-    resolverNote: row.resolver_note ?? undefined,
-    resolvedAt: row.resolved_at ?? undefined,
-    createdAt: row.created_at,
-  };
-}
 
 function responseWithSession(body: unknown, session: AnonymousSession | null, init?: ResponseInit) {
   const response = NextResponse.json(body, init);
@@ -89,85 +33,38 @@ function responseWithSession(body: unknown, session: AnonymousSession | null, in
   return response;
 }
 
-function getSession(request: NextRequest, config: NonNullable<ReturnType<typeof supabaseConfig>>) {
-  return getAnonymousSession(
+function createBackend(request: NextRequest) {
+  const config = getSupabaseAdminConfig();
+  if (!config) return null;
+
+  const session = getAnonymousSession(
     request.cookies.get(anonymousSessionCookieName)?.value,
-    process.env.RASA_SESSION_SECRET ?? config.key,
+    getSessionSigningSecret(config),
   );
+  const service = new SavedReelsService(new SavedReelsRepository(config));
+  return { service, session };
 }
 
-function isClientSave(value: unknown): value is SavedPlaceRecord {
-  if (!value || typeof value !== "object") return false;
+function backendFailure(error: unknown, session: AnonymousSession) {
+  if (error instanceof SavedReelLimitError) {
+    return responseWithSession({ error: error.message }, session, { status: 429 });
+  }
 
-  const save = value as Partial<SavedPlaceRecord>;
-  return (
-    typeof save.id === "string" &&
-    /^save-[A-Za-z0-9_-]{8,128}$/.test(save.id) &&
-    typeof save.sourceUrl === "string" &&
-    save.sourceUrl.length <= 2048
-  );
-}
-
-function rowFromSave(save: SavedPlaceRecord, userKey: string) {
-  const sourceUrl = normalizeInstagramReelUrl(save.sourceUrl ?? "");
-
-  if (!sourceUrl) return null;
-
-  const createdAt = new Date().toISOString();
-
-  return {
-    id: save.id,
-    user_key: userKey,
-    place_id: `saved-reel-${save.id}`,
-    place_name: "Instagram Reel",
-    area: "Saved Reel",
-    source: "instagram",
-    source_url: sourceUrl,
-    creator_handle: null,
-    raw_input: sourceUrl,
-    confidence: 0,
-    resolution_status: "pending",
-    resolver_note: "Saved to your Rasa Map.",
-    resolved_at: null,
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-}
-
-async function readSave(
-  config: NonNullable<ReturnType<typeof supabaseConfig>>,
-  userKey: string,
-  id: string,
-) {
-  const response = await supabaseFetch(
-    config,
-    `saved_places?select=*&id=eq.${encodeURIComponent(id)}&user_key=eq.${encodeURIComponent(userKey)}`,
-  );
-
-  if (!response.ok) return null;
-  const rows = (await response.json()) as SavedPlaceRow[];
-  return rows[0] ? saveFromRow(rows[0]) : null;
+  return responseWithSession({ error: "Rasa could not reach cloud storage." }, session, {
+    status: 503,
+  });
 }
 
 export async function GET(request: NextRequest) {
-  const config = supabaseConfig();
+  const backend = createBackend(request);
+  if (!backend) return NextResponse.json({ mode: "local", saves: [] });
 
-  if (!config) {
-    return NextResponse.json({ mode: "local", saves: [] });
+  try {
+    const saves = await backend.service.list(backend.session.userKey);
+    return responseWithSession({ mode: "supabase", saves }, backend.session);
+  } catch (error) {
+    return backendFailure(error, backend.session);
   }
-
-  const session = getSession(request, config);
-  const response = await supabaseFetch(
-    config,
-    `saved_places?select=*&user_key=eq.${encodeURIComponent(session.userKey)}&order=created_at.desc&limit=${maxSavesPerSession}`,
-  );
-
-  if (!response.ok) {
-    return responseWithSession({ error: "Could not load saved Reels." }, session, { status: 503 });
-  }
-
-  const rows = (await response.json()) as SavedPlaceRow[];
-  return responseWithSession({ mode: "supabase", saves: rows.map(saveFromRow) }, session);
 }
 
 export async function POST(request: NextRequest) {
@@ -179,74 +76,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid save payload." }, { status: 400 });
   }
 
-  if (!isClientSave(body.save)) {
+  const save = parseSavedReel(body.save);
+  if (!save) {
     return NextResponse.json({ error: "Paste a valid Instagram Reel link." }, { status: 400 });
   }
 
-  const sourceUrl = body.save?.sourceUrl;
+  const backend = createBackend(request);
+  if (!backend) return NextResponse.json({ mode: "local" });
 
-  if (!sourceUrl || !normalizeInstagramReelUrl(sourceUrl)) {
-    return NextResponse.json({ error: "Paste a valid Instagram Reel link." }, { status: 400 });
+  try {
+    const savedReel = await backend.service.save(backend.session.userKey, save);
+    return responseWithSession({ mode: "supabase", save: savedReel }, backend.session);
+  } catch (error) {
+    return backendFailure(error, backend.session);
   }
-
-  const config = supabaseConfig();
-
-  if (!config) {
-    return NextResponse.json({ mode: "local" });
-  }
-
-  const session = getSession(request, config);
-  const row = rowFromSave(body.save, session.userKey);
-
-  if (!row) {
-    return responseWithSession({ error: "Paste a valid Instagram Reel link." }, session, {
-      status: 400,
-    });
-  }
-
-  const existing = await readSave(config, session.userKey, row.id);
-
-  if (existing) {
-    return responseWithSession({ mode: "supabase", save: existing }, session);
-  }
-
-  const response = await supabaseFetch(config, "saved_places", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(row),
-  });
-
-  if (!response.ok) {
-    return responseWithSession({ error: "Could not save this Reel." }, session, { status: 503 });
-  }
-
-  const rows = (await response.json()) as SavedPlaceRow[];
-  return responseWithSession(
-    { mode: "supabase", save: rows[0] ? saveFromRow(rows[0]) : body.save },
-    session,
-  );
 }
 
 export async function DELETE(request: NextRequest) {
-  const config = supabaseConfig();
-
-  if (!config) {
-    return NextResponse.json({ mode: "local", cleared: true });
+  const id = new URL(request.url).searchParams.get("id") ?? undefined;
+  if (id && !isSaveId(id)) {
+    return NextResponse.json({ error: "Invalid saved Reel id." }, { status: 400 });
   }
 
-  const session = getSession(request, config);
-  const id = new URL(request.url).searchParams.get("id");
-  const target = id
-    ? `saved_places?id=eq.${encodeURIComponent(id)}&user_key=eq.${encodeURIComponent(session.userKey)}`
-    : `saved_places?user_key=eq.${encodeURIComponent(session.userKey)}`;
-  const response = await supabaseFetch(config, target, { method: "DELETE" });
+  const backend = createBackend(request);
+  if (!backend) return NextResponse.json({ mode: "local", cleared: true });
 
-  if (!response.ok) {
-    return responseWithSession({ error: "Could not remove saved Reel." }, session, { status: 503 });
+  try {
+    await backend.service.remove(backend.session.userKey, id);
+    return responseWithSession({ mode: "supabase", cleared: true }, backend.session);
+  } catch (error) {
+    return backendFailure(error, backend.session);
   }
-
-  return responseWithSession({ mode: "supabase", cleared: true }, session);
 }

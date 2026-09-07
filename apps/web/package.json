@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
+    "test:backend": "tsx --test server/*.test.ts server/**/*.test.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -19,7 +20,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
-    "next": "^15.0.0",
+    "next": "^15.5.25",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -28,7 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@next/eslint-plugin-next": "^15.0.0",
+    "@next/eslint-plugin-next": "^15.5.25",
     "@rasa/config": "0.1.0",
     "@types/node": "^22.7.4",
     "@types/react": "^19.0.0",
@@ -36,7 +37,8 @@
     "@typescript-eslint/eslint-plugin": "^8.47.0",
     "@typescript-eslint/parser": "^8.47.0",
     "eslint": "^9.12.0",
-    "eslint-config-next": "^15.0.0",
+    "eslint-config-next": "^15.5.25",
+    "tsx": "^4.23.13",
     "typescript": "^5.6.3"
   }
 }

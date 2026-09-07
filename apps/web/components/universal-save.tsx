@@ -9,6 +9,7 @@ import {
   clearSavedRecords,
   deleteSavedRecord,
   loadSavedRecords,
+  mergeSavedRecords,
   syncSavedRecord,
   writeLocalSaves,
 } from "../lib/save-sync";
@@ -81,7 +82,7 @@ export function UniversalSave() {
 
     const result = await syncSavedRecord(nextSave);
     setSyncMode(result.mode);
-    persist(optimisticSaves.map((save) => (save.id === nextSave.id ? result.save : save)));
+    persist(mergeSavedRecords([result.save], saves));
     setMessage(
       result.mode === "supabase"
         ? "Saved privately to your Rasa Map."
