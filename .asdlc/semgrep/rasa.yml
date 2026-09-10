@@ -1,0 +1,16 @@
+rules:
+  - id: rasa-no-public-service-role-key
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Supabase service-role credentials must never use a NEXT_PUBLIC_ environment name.
+    pattern-regex: NEXT_PUBLIC_[A-Z0-9_]*SERVICE_ROLE_KEY
+
+  - id: rasa-no-service-key-in-client
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Client code must never read the Supabase service-role key.
+    pattern: process.env.SUPABASE_SERVICE_ROLE_KEY
+    paths:
+      exclude:
+        - apps/web/server/**
+        - apps/web/app/api/**
